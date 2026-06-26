@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Survey AI Workspace Assistant",
+  "description": "AI-assisted survey workspace for profile-isolated notes and page snapshots.",
+  "version": "0.1.0",
+  "permissions": ["sidePanel", "storage", "tabs", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/serviceWorker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/index.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Survey AI Workspace"
+  }
+}

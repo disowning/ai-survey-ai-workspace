@@ -1,0 +1,10 @@
+.git
+.env
+admin/node_modules
+admin/dist
+extension/node_modules
+extension/dist
+node_modules
+pencil-exports
+pencil-exports-v3
+*.log

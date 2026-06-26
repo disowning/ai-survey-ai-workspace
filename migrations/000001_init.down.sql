@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS notes;
+DROP TABLE IF EXISTS page_snapshots;
+DROP TABLE IF EXISTS surveys;
+DROP TABLE IF EXISTS profile_sites;
+DROP TABLE IF EXISTS survey_sites;
+DROP TABLE IF EXISTS profiles;

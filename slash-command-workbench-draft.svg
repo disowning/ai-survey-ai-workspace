@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="930" viewBox="0 0 1320 930">
+  <defs>
+    <style>
+      .bg { fill: #eef1f3; }
+      .phone { fill: #f8f9fa; stroke: #cfd6dc; stroke-width: 1.2; }
+      .soft { fill: #ffffff; stroke: #d9dee3; stroke-width: 1; }
+      .pill { fill: #e8f3f4; stroke: #bfd4d7; stroke-width: 1; }
+      .chip { fill: #ffffff; stroke: #dde2e7; stroke-width: 1; }
+      .muted { fill: #8a949f; font: 13px "Segoe UI", Arial, sans-serif; }
+      .tiny { fill: #8a949f; font: 11px "Segoe UI", Arial, sans-serif; }
+      .label { fill: #2f3842; font: 600 14px "Segoe UI", Arial, sans-serif; }
+      .text { fill: #46505a; font: 13px "Segoe UI", Arial, sans-serif; }
+      .title { fill: #1f2933; font: 700 16px "Segoe UI", Arial, sans-serif; }
+      .command { fill: #24303a; font: 600 14px "Segoe UI", Arial, sans-serif; }
+      .iconText { fill: #65717c; font: 16px "Segoe UI Symbol", "Segoe UI", Arial, sans-serif; }
+      .green { fill: #6fc36a; }
+      .orange { fill: #ffb45b; }
+      .purple { fill: #c28bff; }
+      .blue { fill: #72a7ff; }
+      .line { stroke: #e2e6ea; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1320" height="930"/>
+  <text x="40" y="42" class="title">Survey AI Workspace 用户端草稿：极简输入框 + / 命令工作台</text>
+  <text x="40" y="66" class="muted">目标：少按钮、少面板、主入口只有底部输入框；复杂能力通过 / 命令触发。</text>
+
+  <!-- Artboard 1 -->
+  <g transform="translate(40 92)">
+    <text x="0" y="-16" class="label">1. 主界面：极简 Chat</text>
+    <rect class="phone" x="0" y="0" width="390" height="844" rx="18"/>
+    <rect class="pill" x="114" y="12" width="164" height="30" rx="15"/>
+    <text x="135" y="32" class="text">Profile-001 · Ipsos</text>
+    <text x="322" y="34" class="iconText">↶</text>
+    <text x="358" y="34" class="iconText">▣</text>
+
+    <text x="244" y="704" class="tiny">输入 / 查看命令</text>
+
+    <g transform="translate(10 720)">
+      <rect class="chip" x="0" y="0" width="118" height="30" rx="10"/>
+      <circle class="green" cx="16" cy="15" r="7"/>
+      <text x="30" y="20" class="label">总结</text>
+      <text x="62" y="20" class="tiny">当前页面</text>
+
+      <rect class="chip" x="0" y="40" width="118" height="30" rx="10"/>
+      <circle class="orange" cx="16" cy="55" r="7"/>
+      <text x="30" y="60" class="label">解释</text>
+      <text x="62" y="60" class="tiny">当前题目</text>
+
+      <rect class="chip" x="0" y="80" width="118" height="30" rx="10"/>
+      <circle class="purple" cx="16" cy="95" r="7"/>
+      <text x="30" y="100" class="label">翻译</text>
+      <text x="62" y="100" class="tiny">选中文本</text>
+    </g>
+
+    <rect class="soft" x="10" y="776" width="370" height="58" rx="14"/>
+    <text x="28" y="810" class="iconText">@</text>
+    <text x="62" y="810" class="iconText">≛</text>
+    <text x="98" y="810" class="muted">在页面划词，或输入 / 命令</text>
+    <rect class="pill" x="238" y="797" width="72" height="22" rx="11"/>
+    <text x="258" y="812" class="tiny">Default</text>
+    <circle class="soft" cx="350" cy="805" r="17"/>
+    <text x="344" y="811" class="iconText">↑</text>
+  </g>
+
+  <!-- Artboard 2 -->
+  <g transform="translate(465 92)">
+    <text x="0" y="-16" class="label">2. 输入 / 后：命令面板</text>
+    <rect class="phone" x="0" y="0" width="390" height="844" rx="18"/>
+    <rect class="pill" x="114" y="12" width="164" height="30" rx="15"/>
+    <text x="135" y="32" class="text">Profile-001 · Ipsos</text>
+    <text x="322" y="34" class="iconText">↶</text>
+    <text x="358" y="34" class="iconText">▣</text>
+
+    <rect class="soft" x="14" y="494" width="362" height="274" rx="14"/>
+    <text x="30" y="522" class="tiny">命令</text>
+
+    <g transform="translate(22 536)">
+      <g>
+        <circle class="green" cx="12" cy="13" r="7"/>
+        <text x="32" y="18" class="command">/总结 当前页面</text>
+        <text x="212" y="18" class="tiny">生成页面摘要</text>
+      </g>
+      <line class="line" x1="0" y1="34" x2="344" y2="34"/>
+      <g transform="translate(0 39)">
+        <circle class="orange" cx="12" cy="13" r="7"/>
+        <text x="32" y="18" class="command">/解释 当前题目</text>
+        <text x="212" y="18" class="tiny">说明题意和选项</text>
+      </g>
+      <line class="line" x1="0" y1="73" x2="344" y2="73"/>
+      <g transform="translate(0 78)">
+        <circle class="purple" cx="12" cy="13" r="7"/>
+        <text x="32" y="18" class="command">/翻译 当前页</text>
+        <text x="212" y="18" class="tiny">译成中文</text>
+      </g>
+      <line class="line" x1="0" y1="112" x2="344" y2="112"/>
+      <g transform="translate(0 117)">
+        <circle class="purple" cx="12" cy="13" r="7"/>
+        <text x="32" y="18" class="command">/翻译选中</text>
+        <text x="212" y="18" class="tiny">翻译划词内容</text>
+      </g>
+      <line class="line" x1="0" y1="151" x2="344" y2="151"/>
+      <g transform="translate(0 156)">
+        <circle class="blue" cx="12" cy="13" r="7"/>
+        <text x="32" y="18" class="command">/保存笔记</text>
+        <text x="212" y="18" class="tiny">写入当前站点</text>
+      </g>
+      <line class="line" x1="0" y1="190" x2="344" y2="190"/>
+      <g transform="translate(0 195)">
+        <circle class="green" cx="12" cy="13" r="7"/>
+        <text x="32" y="18" class="command">/搜索知识库</text>
+        <text x="212" y="18" class="tiny">查历史记录</text>
+      </g>
+      <line class="line" x1="0" y1="229" x2="344" y2="229"/>
+      <g transform="translate(0 234)">
+        <circle class="orange" cx="12" cy="13" r="7"/>
+        <text x="32" y="18" class="command">/保存快照</text>
+        <text x="212" y="18" class="tiny">记录当前页</text>
+      </g>
+    </g>
+
+    <rect class="soft" x="10" y="776" width="370" height="58" rx="14"/>
+    <text x="30" y="810" class="command">/</text>
+    <rect class="pill" x="238" y="797" width="72" height="22" rx="11"/>
+    <text x="258" y="812" class="tiny">Default</text>
+    <circle class="soft" cx="350" cy="805" r="17"/>
+    <text x="344" y="811" class="iconText">↑</text>
+  </g>
+
+  <!-- Artboard 3 -->
+  <g transform="translate(890 92)">
+    <text x="0" y="-16" class="label">3. 结果态：对话 + 快捷操作</text>
+    <rect class="phone" x="0" y="0" width="390" height="844" rx="18"/>
+    <rect class="pill" x="114" y="12" width="164" height="30" rx="15"/>
+    <text x="135" y="32" class="text">Profile-001 · Ipsos</text>
+    <text x="322" y="34" class="iconText">↶</text>
+    <text x="358" y="34" class="iconText">▣</text>
+
+    <rect class="pill" x="174" y="96" width="188" height="36" rx="18"/>
+    <text x="194" y="119" class="text">/解释 当前题目</text>
+
+    <rect class="soft" x="22" y="154" width="336" height="178" rx="14"/>
+    <text x="42" y="184" class="title">解释</text>
+    <text x="42" y="215" class="text">这道题是在询问用户对当前问题的理解。</text>
+    <text x="42" y="240" class="text">如果页面包含选项，助手只解释含义，</text>
+    <text x="42" y="265" class="text">不会替用户选择答案。</text>
+
+    <rect class="chip" x="42" y="292" width="86" height="26" rx="13"/>
+    <text x="56" y="310" class="tiny">保存为笔记</text>
+    <rect class="chip" x="136" y="292" width="56" height="26" rx="13"/>
+    <text x="154" y="310" class="tiny">复制</text>
+    <rect class="chip" x="200" y="292" width="66" height="26" rx="13"/>
+    <text x="217" y="310" class="tiny">继续问</text>
+
+    <g transform="translate(10 720)">
+      <rect class="chip" x="0" y="0" width="118" height="30" rx="10"/>
+      <circle class="green" cx="16" cy="15" r="7"/>
+      <text x="30" y="20" class="label">总结</text>
+      <text x="62" y="20" class="tiny">当前页面</text>
+
+      <rect class="chip" x="0" y="40" width="118" height="30" rx="10"/>
+      <circle class="orange" cx="16" cy="55" r="7"/>
+      <text x="30" y="60" class="label">解释</text>
+      <text x="62" y="60" class="tiny">当前题目</text>
+
+      <rect class="chip" x="0" y="80" width="118" height="30" rx="10"/>
+      <circle class="purple" cx="16" cy="95" r="7"/>
+      <text x="30" y="100" class="label">翻译</text>
+      <text x="62" y="100" class="tiny">选中文本</text>
+    </g>
+
+    <rect class="soft" x="10" y="776" width="370" height="58" rx="14"/>
+    <text x="28" y="810" class="iconText">@</text>
+    <text x="62" y="810" class="iconText">≛</text>
+    <text x="98" y="810" class="muted">继续提问，或输入 / 命令</text>
+    <rect class="pill" x="238" y="797" width="72" height="22" rx="11"/>
+    <text x="258" y="812" class="tiny">Default</text>
+    <circle class="soft" cx="350" cy="805" r="17"/>
+    <text x="344" y="811" class="iconText">↑</text>
+  </g>
+</svg>

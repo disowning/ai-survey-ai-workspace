@@ -1,0 +1,11 @@
+.env
+*.exe
+*.test
+coverage.out
+tmp/
+dist/
+vendor/
+extension/node_modules/
+extension/dist/
+admin/node_modules/
+admin/dist/
