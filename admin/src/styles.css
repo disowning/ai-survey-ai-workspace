@@ -186,6 +186,43 @@ nav button:hover {
   gap: 8px;
 }
 
+.login-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.login-row input {
+  min-width: 0;
+}
+
+.login-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 13px;
+  color: #ffffff;
+  background: #202124;
+  border: 1px solid #202124;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.login-row button.secondary-action {
+  color: #3c4043;
+  background: #f8fafd;
+  border-color: #e5e7eb;
+}
+
+.login-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .status-row {
   display: flex;
   flex-wrap: wrap;

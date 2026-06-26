@@ -21,14 +21,22 @@ import {
   UserRound,
   XCircle
 } from "lucide-react";
-import { deleteKnowledge, listResource } from "./api";
+import { deleteKnowledge, downloadExport, listResource, login, setAuthToken } from "./api";
 import { resources } from "./resources";
 import type { AnyRecord, ResourceConfig, ResourceKey } from "./types";
 
 const defaultApiBaseUrl = "http://localhost:8080";
+const storageKeys = {
+  apiBaseUrl: "surveyAiAdmin.apiBaseUrl",
+  authToken: "surveyAiAdmin.authToken",
+  authUsername: "surveyAiAdmin.authUsername"
+} as const;
 
 export function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loggedIn, setLoggedIn] = useState(false);
   const [activeKey, setActiveKey] = useState<ResourceKey>("profiles");
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [rows, setRows] = useState<AnyRecord[]>([]);
@@ -45,10 +53,23 @@ export function App() {
   const visibleRows = useMemo(() => rows.filter((row) => rowMatchesQuery(row, query)), [rows, query]);
 
   useEffect(() => {
+    const savedApiBaseUrl = localStorage.getItem(storageKeys.apiBaseUrl);
+    const savedToken = localStorage.getItem(storageKeys.authToken);
+    const savedUsername = localStorage.getItem(storageKeys.authUsername);
+    if (savedApiBaseUrl) setApiBaseUrl(savedApiBaseUrl);
+    if (savedUsername) setUsername(savedUsername);
+    if (savedToken) {
+      setAuthToken(savedToken);
+      setLoggedIn(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loggedIn) return;
     setOffset(0);
     setQuery("");
     void load(active, 0);
-  }, [activeKey]);
+  }, [activeKey, loggedIn]);
 
   async function run(task: () => Promise<void>) {
     setBusy(true);
@@ -63,6 +84,7 @@ export function App() {
   }
 
   async function load(config = active, nextOffset = offset) {
+    if (!loggedIn) return;
     await run(async () => {
       const data = await listResource(trimmedApiBaseUrl, config, filters, { limit, offset: nextOffset });
       setRows(data);
@@ -94,10 +116,38 @@ export function App() {
       setError("请先输入 profile_id 再导出");
       return;
     }
-    const params = new URLSearchParams();
-    if (filters.profile_id) params.set("profile_id", filters.profile_id);
-    if (filters.site_key) params.set("site_key", filters.site_key);
-    window.open(`${trimmedApiBaseUrl}${path}?${params.toString()}`, "_blank", "noopener,noreferrer");
+    void run(async () => {
+      const blob = await downloadExport(trimmedApiBaseUrl, path, filters);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = exportFilename(path);
+      anchor.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  async function handleLogin() {
+    await run(async () => {
+      const data = await login(trimmedApiBaseUrl, username.trim(), password);
+      localStorage.setItem(storageKeys.apiBaseUrl, trimmedApiBaseUrl);
+      localStorage.setItem(storageKeys.authUsername, username.trim());
+      localStorage.setItem(storageKeys.authToken, data.token);
+      setPassword("");
+      setLoggedIn(true);
+      const items = await listResource(trimmedApiBaseUrl, active, filters, { limit, offset: 0 });
+      setRows(items);
+      setSelected(items[0] ?? null);
+      setOffset(0);
+    });
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(storageKeys.authToken);
+    setAuthToken("");
+    setLoggedIn(false);
+    setRows([]);
+    setSelected(null);
   }
 
   async function copySelected() {
@@ -151,6 +201,19 @@ export function App() {
               <span>API</span>
               <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} />
             </label>
+
+            <div className="login-row">
+              <input value={username} placeholder="Username" autoComplete="username" onChange={(event) => setUsername(event.target.value)} />
+              <input value={password} type="password" placeholder={loggedIn ? "已登录，留空保持" : "Password"} autoComplete="current-password" onChange={(event) => setPassword(event.target.value)} />
+              <button type="button" onClick={() => void handleLogin()} disabled={busy || !username.trim() || !password}>
+                登录
+              </button>
+              {loggedIn ? (
+                <button type="button" className="secondary-action" onClick={handleLogout}>
+                  退出
+                </button>
+              ) : null}
+            </div>
 
             <div className="status-row">
               <span>{rows.length} 条已加载</span>
@@ -384,4 +447,10 @@ function formatDetail(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value, null, 2);
+}
+
+function exportFilename(path: string): string {
+  if (path.includes("notes.csv")) return "survey-notes.csv";
+  if (path.includes("daily-report")) return "survey-daily-report.md";
+  return "survey-export.md";
 }

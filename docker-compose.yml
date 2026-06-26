@@ -37,5 +37,14 @@ services:
       - "${API_HOST_PORT:-18080}:8080"
     restart: unless-stopped
 
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    container_name: survey-ai-workspace-admin
+    ports:
+      - "${ADMIN_HOST_PORT:-32181}:80"
+    restart: unless-stopped
+
 volumes:
   postgres_data:
