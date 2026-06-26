@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: survey_ai
       POSTGRES_PASSWORD: survey_ai
       POSTGRES_DB: survey_ai_workspace
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
