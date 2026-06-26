@@ -27,7 +27,11 @@ func main() {
 	defer db.Close()
 
 	aiClient := ai.NewClient(cfg.AIAPIKey, cfg.AIBaseURL, cfg.AIModel, cfg.AIEmbeddingModel)
-	router := server.New(db, aiClient)
+	router := server.New(db, aiClient, server.AuthConfig{
+		Username:    cfg.AuthUsername,
+		Password:    cfg.AuthPassword,
+		TokenSecret: cfg.AuthTokenSecret,
+	})
 
 	go func() {
 		if err := router.Run(cfg.HTTPAddr); err != nil {

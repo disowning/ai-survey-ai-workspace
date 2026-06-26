@@ -21,8 +21,10 @@ import {
   ensureSite,
   listAIConversations,
   listNotes,
+  login,
   saveSnapshot,
   searchKnowledge,
+  setAuthToken,
   translateText
 } from "./api";
 import type { SystemStatus } from "./api";
@@ -101,6 +103,9 @@ export function App() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [profileDraft, setProfileDraft] = useState("profile-001");
   const [apiDraft, setApiDraft] = useState(DEFAULT_API_BASE_URL);
+  const [usernameDraft, setUsernameDraft] = useState("");
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [authToken, setAuthTokenState] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -120,6 +125,9 @@ export function App() {
       setProfileDraft(savedProfile.profileKey || "profile-001");
       setApiBaseUrl(savedSettings.apiBaseUrl);
       setApiDraft(savedSettings.apiBaseUrl);
+      setUsernameDraft(savedSettings.authUsername || "");
+      setAuthTokenState(savedSettings.authToken || "");
+      setAuthToken(savedSettings.authToken || "");
       setSite(savedSite);
       await refreshApiStatus(savedSettings.apiBaseUrl.replace(/\/+$/, ""));
       await refreshPageContext(savedSettings.apiBaseUrl.replace(/\/+$/, ""), false);
@@ -409,11 +417,32 @@ export function App() {
   async function saveSettings() {
     await runTask(async () => {
       const nextBaseUrl = apiDraft.trim() || DEFAULT_API_BASE_URL;
+      const normalizedBaseUrl = nextBaseUrl.replace(/\/+$/, "");
+      let nextAuthToken = authToken;
+      let nextAuthExpiresAt = "";
+
+      if (usernameDraft.trim() && passwordDraft) {
+        const auth = await login(normalizedBaseUrl, usernameDraft.trim(), passwordDraft);
+        nextAuthToken = auth.token || "";
+        nextAuthExpiresAt = auth.expires_at || "";
+        setAuthTokenState(nextAuthToken);
+        setAuthToken(nextAuthToken);
+        setPasswordDraft("");
+      } else {
+        setAuthToken(nextAuthToken);
+      }
+
       setApiBaseUrl(nextBaseUrl);
-      await setSettings({ apiBaseUrl: nextBaseUrl });
-      await refreshApiStatus(nextBaseUrl);
+      await setSettings({
+        apiBaseUrl: nextBaseUrl,
+        authToken: nextAuthToken,
+        authExpiresAt: nextAuthExpiresAt,
+        authUsername: usernameDraft.trim()
+      });
+      const statusOK = await refreshApiStatus(normalizedBaseUrl);
+      if (!statusOK) throw new Error("API 连接失败，请检查地址或反向代理");
       if (profileDraft.trim()) {
-        const bound = await bindProfile(nextBaseUrl.replace(/\/+$/, ""), profileDraft.trim(), profileDraft.trim());
+        const bound = await bindProfile(normalizedBaseUrl, profileDraft.trim(), profileDraft.trim());
         setProfile(bound);
         await setLocalProfile(bound);
       }
@@ -617,6 +646,14 @@ export function App() {
             <label>
               API
               <input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} />
+            </label>
+            <label>
+              Username
+              <input value={usernameDraft} autoComplete="username" onChange={(event) => setUsernameDraft(event.target.value)} />
+            </label>
+            <label>
+              Password
+              <input value={passwordDraft} type="password" autoComplete="current-password" placeholder={authToken ? "已登录，留空保持当前登录" : "输入登录密码"} onChange={(event) => setPasswordDraft(event.target.value)} />
             </label>
             <label>
               Profile

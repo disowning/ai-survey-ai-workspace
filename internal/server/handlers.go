@@ -63,6 +63,7 @@ func (s *Server) systemStatus(c *gin.Context) {
 	databaseOK := s.db.PingContext(ctx) == nil
 	c.JSON(http.StatusOK, gin.H{
 		"status":                "ok",
+		"auth_required":         s.authEnabled(),
 		"database_ok":           databaseOK,
 		"ai_configured":         s.aiClient.Configured(),
 		"embedding_configured":  s.aiClient.EmbeddingsConfigured(),

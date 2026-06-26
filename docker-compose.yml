@@ -30,6 +30,9 @@ services:
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
       AI_MODEL: ${AI_MODEL:-gpt-4.1-mini}
       AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-text-embedding-3-small}
+      AUTH_USERNAME: ${AUTH_USERNAME:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-}
     ports:
       - "${API_HOST_PORT:-18080}:8080"
     restart: unless-stopped

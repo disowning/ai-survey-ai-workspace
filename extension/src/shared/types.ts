@@ -23,6 +23,9 @@ export type LocalProfile = {
 
 export type ExtensionSettings = {
   apiBaseUrl: string;
+  authToken?: string;
+  authExpiresAt?: string;
+  authUsername?: string;
 };
 
 export type SnapshotPayload = {

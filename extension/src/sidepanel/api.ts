@@ -22,6 +22,7 @@ type DetectSiteResponse = {
 
 export type SystemStatus = {
   status: string;
+  auth_required?: boolean;
   database_ok: boolean;
   ai_configured: boolean;
   embedding_configured: boolean;
@@ -29,9 +30,21 @@ export type SystemStatus = {
   ai_embedding_model?: string;
 };
 
+type LoginResponse = {
+  token: string;
+  expires_at: string;
+  disabled?: boolean;
+};
+
+let authToken = "";
+
+export function setAuthToken(token: string): void {
+  authToken = token.trim();
+}
+
 export async function checkHealth(apiBaseUrl: string): Promise<SystemStatus | null> {
   try {
-    const response = await fetch(`${apiBaseUrl}/api/system/status`);
+    const response = await fetch(`${apiBaseUrl}/api/system/status`, { headers: authHeaders() });
     if (!response.ok) return null;
     return (await response.json()) as SystemStatus;
   } catch {
@@ -39,10 +52,26 @@ export async function checkHealth(apiBaseUrl: string): Promise<SystemStatus | nu
   }
 }
 
+export async function login(apiBaseUrl: string, username: string, password: string): Promise<LoginResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ username, password })
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response, "登录失败"));
+  }
+
+  const data = (await response.json()) as LoginResponse;
+  setAuthToken(data.token || "");
+  return data;
+}
+
 export async function bindProfile(apiBaseUrl: string, profileKey: string, profileName: string): Promise<LocalProfile> {
   const response = await fetch(`${apiBaseUrl}/api/profiles/bind`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       profile_key: profileKey,
       profile_name: profileName || profileKey
@@ -64,7 +93,7 @@ export async function bindProfile(apiBaseUrl: string, profileKey: string, profil
 export async function detectSite(apiBaseUrl: string, pageUrl: string): Promise<DetectSiteResponse> {
   const response = await fetch(`${apiBaseUrl}/api/sites/detect`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({ url: pageUrl })
   });
 
@@ -78,7 +107,7 @@ export async function detectSite(apiBaseUrl: string, pageUrl: string): Promise<D
 export async function ensureSite(apiBaseUrl: string, site: SiteDetection): Promise<SiteDetection> {
   const response = await fetch(`${apiBaseUrl}/api/sites`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       site_key: site.site_key,
       site_name: site.site_name || site.site_key,
@@ -96,7 +125,7 @@ export async function ensureSite(apiBaseUrl: string, site: SiteDetection): Promi
 export async function saveSnapshot(apiBaseUrl: string, payload: SnapshotPayload): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/page-snapshots`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify(payload)
   });
 
@@ -111,7 +140,7 @@ export async function createNote(
 ): Promise<Note> {
   const response = await fetch(`${apiBaseUrl}/api/notes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify(payload)
   });
 
@@ -128,7 +157,7 @@ export async function listNotes(apiBaseUrl: string, profileId: number, siteKey: 
     site_key: siteKey,
     limit: "20"
   });
-  const response = await fetch(`${apiBaseUrl}/api/notes?${params.toString()}`);
+  const response = await fetch(`${apiBaseUrl}/api/notes?${params.toString()}`, { headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error(await readError(response, "读取历史笔记失败"));
@@ -150,7 +179,7 @@ export async function translateText(
 ): Promise<Translation> {
   const response = await fetch(`${apiBaseUrl}/api/ai/translate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify(payload)
   });
 
@@ -176,7 +205,7 @@ export async function chatWithAI(
 ): Promise<AIConversation> {
   const response = await fetch(`${apiBaseUrl}/api/ai/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify(payload)
   });
 
@@ -193,7 +222,7 @@ export async function listAIConversations(apiBaseUrl: string, profileId: number,
     site_key: siteKey,
     limit: "20"
   });
-  const response = await fetch(`${apiBaseUrl}/api/ai/conversations?${params.toString()}`);
+  const response = await fetch(`${apiBaseUrl}/api/ai/conversations?${params.toString()}`, { headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error(await readError(response, "读取 AI 对话失败"));
@@ -216,13 +245,24 @@ export async function searchKnowledge(
   if (params.scope) query.set("scope", params.scope);
   if (params.survey_id) query.set("survey_id", String(params.survey_id));
 
-  const response = await fetch(`${apiBaseUrl}/api/knowledge/search?${query.toString()}`);
+  const response = await fetch(`${apiBaseUrl}/api/knowledge/search?${query.toString()}`, { headers: authHeaders() });
   if (!response.ok) {
     throw new Error(await readError(response, "搜索知识库失败"));
   }
 
   const data = (await response.json()) as { items: KnowledgeChunk[] };
   return data.items;
+}
+
+function authHeaders(): HeadersInit {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+function jsonHeaders(): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...authHeaders()
+  };
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {

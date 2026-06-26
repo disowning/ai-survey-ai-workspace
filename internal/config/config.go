@@ -9,6 +9,9 @@ type Config struct {
 	AIBaseURL        string
 	AIModel          string
 	AIEmbeddingModel string
+	AuthUsername     string
+	AuthPassword     string
+	AuthTokenSecret  string
 }
 
 func Load() Config {
@@ -19,6 +22,9 @@ func Load() Config {
 		AIBaseURL:        getenv("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIModel:          getenv("AI_MODEL", "gpt-4.1-mini"),
 		AIEmbeddingModel: getenv("AI_EMBEDDING_MODEL", "text-embedding-3-small"),
+		AuthUsername:     getenv("AUTH_USERNAME", ""),
+		AuthPassword:     getenv("AUTH_PASSWORD", ""),
+		AuthTokenSecret:  getenv("AUTH_TOKEN_SECRET", ""),
 	}
 }
 
