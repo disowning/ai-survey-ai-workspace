@@ -1,9 +1,12 @@
 param(
-  [string]$ApiBaseUrl = "http://localhost:8080"
+  [string]$ApiBaseUrl = "http://localhost:8080",
+  [string]$Username = "",
+  [string]$Password = ""
 )
 
 $ErrorActionPreference = "Stop"
 $base = $ApiBaseUrl.TrimEnd("/")
+$headers = @{}
 
 function Invoke-JsonPost {
   param(
@@ -11,7 +14,7 @@ function Invoke-JsonPost {
     [object]$Body
   )
 
-  Invoke-RestMethod -Method Post -Uri "$base$Path" -ContentType "application/json" -Body ($Body | ConvertTo-Json -Depth 8)
+  Invoke-RestMethod -Method Post -Uri "$base$Path" -Headers $script:headers -ContentType "application/json" -Body ($Body | ConvertTo-Json -Depth 8)
 }
 
 Write-Host "Checking health..."
@@ -25,6 +28,18 @@ if (-not $status.database_ok) {
   throw "Database status check failed."
 }
 Write-Host "AI configured: $($status.ai_configured); embeddings configured: $($status.embedding_configured)"
+
+if ($status.auth_required) {
+  if (-not $Username -or -not $Password) {
+    throw "Auth is required. Pass -Username and -Password."
+  }
+  Write-Host "Logging in..."
+  $auth = Invoke-RestMethod -Method Post -Uri "$base/api/auth/login" -ContentType "application/json" -Body (@{
+    username = $Username
+    password = $Password
+  } | ConvertTo-Json)
+  $headers = @{ Authorization = "Bearer $($auth.token)" }
+}
 
 Write-Host "Binding profile..."
 $profile = Invoke-JsonPost "/api/profiles/bind" @{
@@ -72,7 +87,7 @@ $note = Invoke-JsonPost "/api/notes" @{
 
 Write-Host "Searching knowledge..."
 $query = [uri]::EscapeDataString("beverage frequency")
-$knowledge = Invoke-RestMethod "$base/api/knowledge/search?profile_id=$($profile.id)&site_key=$($site.site_key)&q=$query"
+$knowledge = Invoke-RestMethod "$base/api/knowledge/search?profile_id=$($profile.id)&site_key=$($site.site_key)&q=$query" -Headers $headers
 
 Write-Host "Smoke test complete."
 [pscustomobject]@{
