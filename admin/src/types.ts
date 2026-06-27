@@ -6,6 +6,7 @@ export type ResourceKey =
   | "notes"
   | "translations"
   | "conversations"
+  | "answers"
   | "knowledge"
   | "personas";
 

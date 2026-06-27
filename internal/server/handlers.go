@@ -302,6 +302,35 @@ func scanSitePersona(s scanner) (models.SitePersona, error) {
 	return row, err
 }
 
+func scanAnswerRecord(s scanner) (models.AnswerRecord, error) {
+	var row models.AnswerRecord
+	var surveyID, pageSnapshotID sql.NullInt64
+	var optionsText, suggestedAnswer, reason, personaMatched sql.NullString
+	err := s.Scan(
+		&row.ID,
+		&row.ProfileID,
+		&row.SiteKey,
+		&surveyID,
+		&pageSnapshotID,
+		&row.QuestionText,
+		&optionsText,
+		&suggestedAnswer,
+		&row.FinalAnswer,
+		&reason,
+		&personaMatched,
+		&row.Confidence,
+		&row.CreatedAt,
+		&row.UpdatedAt,
+	)
+	row.SurveyID = nullInt64Ptr(surveyID)
+	row.PageSnapshotID = nullInt64Ptr(pageSnapshotID)
+	row.OptionsText = nullStringPtr(optionsText)
+	row.SuggestedAnswer = nullStringPtr(suggestedAnswer)
+	row.Reason = nullStringPtr(reason)
+	row.PersonaMatched = nullStringPtr(personaMatched)
+	return row, err
+}
+
 type profileRequest struct {
 	ProfileKey  string  `json:"profile_key"`
 	ProfileName *string `json:"profile_name"`
@@ -1581,6 +1610,11 @@ func (s *Server) chatWithAI(c *gin.Context) {
 		handleDBError(c, err)
 		return
 	}
+	answers, err := s.relatedAnswerContext(ctx, req.ProfileID, req.SiteKey, req.SurveyID, req.QuestionText, req.UserMessage)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
 	knowledge, err := s.relatedKnowledgeContext(ctx, req.ProfileID, req.SiteKey, req.SurveyID, req.Scope, req.UserMessage)
 	if err != nil {
 		handleDBError(c, err)
@@ -1594,7 +1628,7 @@ func (s *Server) chatWithAI(c *gin.Context) {
 
 你的任务是帮助用户快速理解当前问卷页面，包括翻译、解释题目、总结页面、整理笔记、检索历史记录、对比选项，并在用户明确要求时基于用户已经提供的真实情况给出选择建议。
 
-你只能基于系统提供的当前页面内容、当前站点人设库、当前 Profile 历史笔记、当前网站历史记录和当前问卷上下文回答。
+你只能基于系统提供的当前页面内容、当前站点人设库、相似历史答题库、当前 Profile 历史笔记、当前网站历史记录和当前问卷上下文回答。
 你不能编造页面中没有的信息。
 你不能编造用户身份、经历、收入、年龄、地区、消费习惯等事实。
 你不能替用户自动提交问卷，也不能指导批量操作、绕过风控或处理验证码。
@@ -1602,13 +1636,13 @@ func (s *Server) chatWithAI(c *gin.Context) {
 你不能处理账号密码、cookie、refresh token、API key 等敏感凭证。
 如果用户要求“帮我选择/推荐选项”，你可以：
 1. 先解释题目和各选项含义；
-2. 优先参考当前页面内容，其次参考站点人设库、用户消息和历史笔记做建议；
+2. 优先参考当前页面内容，其次参考站点人设库、相似历史答题库、用户消息和历史笔记做建议；
 3. 如果人设库缺失、冲突或不足以判断，必须说明需要用户确认，不要猜测；
 4. 输出“建议选择/不确定/需要你确认”，不得声称已经替用户作答。`,
 		},
 		{
 			Role:    "user",
-			Content: buildChatContext(req, personas, notes, snapshots, knowledge),
+			Content: buildChatContext(req, personas, answers, notes, snapshots, knowledge),
 		},
 	}, 0.3)
 	if err != nil {
@@ -1752,7 +1786,74 @@ func (s *Server) recentPersonaContext(ctx context.Context, profileID int64, site
 	return builder.String(), rows.Err()
 }
 
-func buildChatContext(req chatRequest, personas, notes, snapshots, knowledge string) string {
+func (s *Server) relatedAnswerContext(ctx context.Context, profileID int64, siteKey string, surveyID *int64, questionText *string, userMessage string) (string, error) {
+	query := strings.TrimSpace(ptrValueString(questionText))
+	if query == "" {
+		query = strings.TrimSpace(userMessage)
+	}
+	if query == "" {
+		return "", nil
+	}
+	query = trimForContext(query, 300)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT question_text, options_text, final_answer, reason, persona_matched, confidence, created_at
+		FROM answer_records
+		WHERE profile_id = $1
+			AND site_key = $2
+			AND ($3::bigint IS NULL OR survey_id = $3 OR survey_id IS NULL)
+			AND (
+				question_text ILIKE '%' || $4 || '%'
+				OR options_text ILIKE '%' || $4 || '%'
+				OR final_answer ILIKE '%' || $4 || '%'
+				OR reason ILIKE '%' || $4 || '%'
+				OR $4 ILIKE '%' || left(question_text, 80) || '%'
+			)
+		ORDER BY
+			CASE WHEN $3::bigint IS NOT NULL AND survey_id = $3 THEN 0 ELSE 1 END ASC,
+			id DESC
+		LIMIT 6
+	`, profileID, siteKey, ptrValue(surveyID), query)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	var builder strings.Builder
+	for rows.Next() {
+		var question, finalAnswer string
+		var options, reason, personaMatched sql.NullString
+		var confidence float64
+		var createdAt time.Time
+		if err := rows.Scan(&question, &options, &finalAnswer, &reason, &personaMatched, &confidence, &createdAt); err != nil {
+			return "", err
+		}
+		builder.WriteString("- ")
+		builder.WriteString(createdAt.Format(time.RFC3339))
+		builder.WriteString(" | 题目: ")
+		builder.WriteString(trimForContext(question, 350))
+		if options.Valid && options.String != "" {
+			builder.WriteString(" | 选项: ")
+			builder.WriteString(trimForContext(options.String, 260))
+		}
+		builder.WriteString(" | 最终选择: ")
+		builder.WriteString(trimForContext(finalAnswer, 200))
+		if reason.Valid && reason.String != "" {
+			builder.WriteString(" | 理由: ")
+			builder.WriteString(trimForContext(reason.String, 260))
+		}
+		if personaMatched.Valid && personaMatched.String != "" {
+			builder.WriteString(" | 人设匹配: ")
+			builder.WriteString(trimForContext(personaMatched.String, 180))
+		}
+		builder.WriteString(" | confidence ")
+		builder.WriteString(strconv.FormatFloat(confidence, 'f', 2, 64))
+		builder.WriteString("\n")
+	}
+	return builder.String(), rows.Err()
+}
+
+func buildChatContext(req chatRequest, personas, answers, notes, snapshots, knowledge string) string {
 	var builder strings.Builder
 	builder.WriteString("当前 Profile ID：")
 	builder.WriteString(strconv.FormatInt(req.ProfileID, 10))
@@ -1801,6 +1902,8 @@ func buildChatContext(req chatRequest, personas, notes, snapshots, knowledge str
 	builder.WriteString(trimForContext(req.PageText, 12000))
 	builder.WriteString("\n\n当前站点人设库：\n")
 	builder.WriteString(emptyFallback(personas))
+	builder.WriteString("\n\n相似历史答题库：\n")
+	builder.WriteString(emptyFallback(answers))
 	builder.WriteString("\n\n相关历史笔记：\n")
 	builder.WriteString(emptyFallback(notes))
 	builder.WriteString("\n\n相关历史页面：\n")
@@ -2285,6 +2388,260 @@ func optionalStringBody(value string) any {
 	return value
 }
 
+type answerRecordRequest struct {
+	ProfileID       int64   `json:"profile_id"`
+	SiteKey         string  `json:"site_key"`
+	SurveyID        *int64  `json:"survey_id"`
+	PageSnapshotID  *int64  `json:"page_snapshot_id"`
+	QuestionText    string  `json:"question_text"`
+	OptionsText     *string `json:"options_text"`
+	SuggestedAnswer *string `json:"suggested_answer"`
+	FinalAnswer     string  `json:"final_answer"`
+	Reason          *string `json:"reason"`
+	PersonaMatched  *string `json:"persona_matched"`
+	Confidence      float64 `json:"confidence"`
+}
+
+func (s *Server) createAnswerRecord(c *gin.Context) {
+	var req answerRecordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		badRequest(c, "invalid JSON body")
+		return
+	}
+	if !prepareAnswerRecordRequest(c, &req, true) {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	row, err := scanAnswerRecord(s.db.QueryRowContext(ctx, `
+		INSERT INTO answer_records (
+			profile_id, site_key, survey_id, page_snapshot_id, question_text,
+			options_text, suggested_answer, final_answer, reason, persona_matched, confidence
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id, profile_id, site_key, survey_id, page_snapshot_id, question_text,
+			options_text, suggested_answer, final_answer, reason, persona_matched,
+			confidence, created_at, updated_at
+	`, req.ProfileID, req.SiteKey, ptrValue(req.SurveyID), ptrValue(req.PageSnapshotID), req.QuestionText, ptrValue(req.OptionsText), ptrValue(req.SuggestedAnswer), req.FinalAnswer, ptrValue(req.Reason), ptrValue(req.PersonaMatched), req.Confidence))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	s.createKnowledgeFromAnswerRecord(ctx, row)
+
+	c.JSON(http.StatusCreated, row)
+}
+
+func (s *Server) listAnswerRecords(c *gin.Context) {
+	limit, offset := limitOffset(c)
+	query := strings.TrimSpace(c.Query("q"))
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, profile_id, site_key, survey_id, page_snapshot_id, question_text,
+			options_text, suggested_answer, final_answer, reason, persona_matched,
+			confidence, created_at, updated_at
+		FROM answer_records
+		WHERE ($1::bigint IS NULL OR profile_id = $1)
+			AND ($2::text IS NULL OR site_key = $2)
+			AND ($3::bigint IS NULL OR survey_id = $3)
+			AND (
+				$4::text = ''
+				OR question_text ILIKE '%' || $4 || '%'
+				OR options_text ILIKE '%' || $4 || '%'
+				OR final_answer ILIKE '%' || $4 || '%'
+				OR reason ILIKE '%' || $4 || '%'
+				OR persona_matched ILIKE '%' || $4 || '%'
+			)
+		ORDER BY id DESC
+		LIMIT $5 OFFSET $6
+	`, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"), optionalInt64Query(c, "survey_id"), query, limit, offset)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	defer rows.Close()
+
+	items, err := readAnswerRecordRows(rows)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (s *Server) getAnswerRecord(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	row, err := scanAnswerRecord(s.db.QueryRowContext(ctx, `
+		SELECT id, profile_id, site_key, survey_id, page_snapshot_id, question_text,
+			options_text, suggested_answer, final_answer, reason, persona_matched,
+			confidence, created_at, updated_at
+		FROM answer_records
+		WHERE id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+			AND ($4::bigint IS NULL OR survey_id = $4)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"), optionalInt64Query(c, "survey_id")))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, row)
+}
+
+func (s *Server) updateAnswerRecord(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req answerRecordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		badRequest(c, "invalid JSON body")
+		return
+	}
+	if !prepareAnswerRecordRequest(c, &req, false) {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	row, err := scanAnswerRecord(s.db.QueryRowContext(ctx, `
+		UPDATE answer_records
+		SET question_text = $2,
+			options_text = $3,
+			suggested_answer = $4,
+			final_answer = $5,
+			reason = $6,
+			persona_matched = $7,
+			confidence = $8,
+			updated_at = NOW()
+		WHERE id = $1
+			AND ($9::bigint IS NULL OR profile_id = $9)
+			AND ($10::text IS NULL OR site_key = $10)
+		RETURNING id, profile_id, site_key, survey_id, page_snapshot_id, question_text,
+			options_text, suggested_answer, final_answer, reason, persona_matched,
+			confidence, created_at, updated_at
+	`, id, req.QuestionText, ptrValue(req.OptionsText), ptrValue(req.SuggestedAnswer), req.FinalAnswer, ptrValue(req.Reason), ptrValue(req.PersonaMatched), req.Confidence, optionalInt64Body(req.ProfileID), optionalStringBody(req.SiteKey)))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	s.createKnowledgeFromAnswerRecord(ctx, row)
+
+	c.JSON(http.StatusOK, row)
+}
+
+func (s *Server) deleteAnswerRecord(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM knowledge_chunks
+		WHERE source_type = 'answer_record'
+			AND source_id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	result, err := tx.ExecContext(ctx, `
+		DELETE FROM answer_records
+		WHERE id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+			AND ($4::bigint IS NULL OR survey_id = $4)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"), optionalInt64Query(c, "survey_id"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	if !writeDeleteResult(c, result) {
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		handleDBError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func readAnswerRecordRows(rows *sql.Rows) ([]models.AnswerRecord, error) {
+	items := make([]models.AnswerRecord, 0)
+	for rows.Next() {
+		item, err := scanAnswerRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func prepareAnswerRecordRequest(c *gin.Context, req *answerRecordRequest, requireProfileAndSite bool) bool {
+	req.SiteKey = strings.TrimSpace(req.SiteKey)
+	req.QuestionText = strings.TrimSpace(req.QuestionText)
+	req.FinalAnswer = strings.TrimSpace(req.FinalAnswer)
+	if req.OptionsText != nil {
+		trimmed := strings.TrimSpace(*req.OptionsText)
+		req.OptionsText = &trimmed
+	}
+	if req.SuggestedAnswer != nil {
+		trimmed := strings.TrimSpace(*req.SuggestedAnswer)
+		req.SuggestedAnswer = &trimmed
+	}
+	if req.Reason != nil {
+		trimmed := strings.TrimSpace(*req.Reason)
+		req.Reason = &trimmed
+	}
+	if req.PersonaMatched != nil {
+		trimmed := strings.TrimSpace(*req.PersonaMatched)
+		req.PersonaMatched = &trimmed
+	}
+	if req.Confidence <= 0 {
+		req.Confidence = 1
+	}
+	if req.Confidence > 1 {
+		req.Confidence = 1
+	}
+	if requireProfileAndSite && (req.ProfileID <= 0 || req.SiteKey == "") {
+		badRequest(c, "profile_id and site_key are required")
+		return false
+	}
+	if req.QuestionText == "" || req.FinalAnswer == "" {
+		badRequest(c, "question_text and final_answer are required")
+		return false
+	}
+	combined := strings.Join([]string{req.QuestionText, ptrValueString(req.OptionsText), ptrValueString(req.SuggestedAnswer), req.FinalAnswer, ptrValueString(req.Reason), ptrValueString(req.PersonaMatched)}, "\n")
+	if containsSensitiveCredential(combined) {
+		badRequest(c, "answer record appears to contain credentials, tokens or verification codes")
+		return false
+	}
+	return true
+}
+
 type knowledgeRequest struct {
 	ProfileID  int64  `json:"profile_id"`
 	SiteKey    string `json:"site_key"`
@@ -2511,6 +2868,41 @@ func (s *Server) createKnowledgeFromAIConversation(ctx context.Context, conversa
 		INSERT INTO knowledge_chunks (profile_id, site_key, survey_id, scope, source_type, source_id, chunk_text, embedding)
 		VALUES ($1, $2, $3, $4, 'ai_conversation', $5, $6, $7::vector)
 	`, conversation.ProfileID, conversation.SiteKey, ptrValue(conversation.SurveyID), normalizeScope("", conversation.SurveyID), conversation.ID, text, ptrValue(embedding))
+}
+
+func (s *Server) createKnowledgeFromAnswerRecord(ctx context.Context, answer models.AnswerRecord) {
+	parts := []string{
+		"Question: " + answer.QuestionText,
+	}
+	if answer.OptionsText != nil && *answer.OptionsText != "" {
+		parts = append(parts, "Options: "+*answer.OptionsText)
+	}
+	if answer.SuggestedAnswer != nil && *answer.SuggestedAnswer != "" {
+		parts = append(parts, "Suggested: "+*answer.SuggestedAnswer)
+	}
+	parts = append(parts, "Final answer: "+answer.FinalAnswer)
+	if answer.Reason != nil && *answer.Reason != "" {
+		parts = append(parts, "Reason: "+*answer.Reason)
+	}
+	if answer.PersonaMatched != nil && *answer.PersonaMatched != "" {
+		parts = append(parts, "Persona matched: "+*answer.PersonaMatched)
+	}
+	text := trimForContext(strings.Join(parts, "\n"), 2500)
+	if text == "" || containsSensitiveCredential(text) {
+		return
+	}
+	embedding := s.knowledgeEmbeddingLiteral(ctx, text)
+	_, _ = s.db.ExecContext(ctx, `
+		DELETE FROM knowledge_chunks
+		WHERE source_type = 'answer_record'
+			AND source_id = $1
+			AND profile_id = $2
+			AND site_key = $3
+	`, answer.ID, answer.ProfileID, answer.SiteKey)
+	_, _ = s.db.ExecContext(ctx, `
+		INSERT INTO knowledge_chunks (profile_id, site_key, survey_id, scope, source_type, source_id, chunk_text, embedding)
+		VALUES ($1, $2, $3, $4, 'answer_record', $5, $6, $7::vector)
+	`, answer.ProfileID, answer.SiteKey, ptrValue(answer.SurveyID), normalizeScope("", answer.SurveyID), answer.ID, text, ptrValue(embedding))
 }
 
 func shouldStoreAIConversationKnowledge(userMessage, aiMessage string) bool {

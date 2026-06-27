@@ -115,3 +115,20 @@ export type SitePersona = {
   created_at: string;
   updated_at: string;
 };
+
+export type AnswerRecord = {
+  id: number;
+  profile_id: number;
+  site_key: string;
+  survey_id?: number;
+  page_snapshot_id?: number;
+  question_text: string;
+  options_text?: string;
+  suggested_answer?: string;
+  final_answer: string;
+  reason?: string;
+  persona_matched?: string;
+  confidence: number;
+  created_at: string;
+  updated_at: string;
+};

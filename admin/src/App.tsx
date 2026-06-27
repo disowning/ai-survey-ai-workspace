@@ -371,6 +371,8 @@ function iconForResource(key: ResourceKey) {
       return <Languages {...props} />;
     case "conversations":
       return <MessageSquareText {...props} />;
+    case "answers":
+      return <ClipboardList {...props} />;
     case "knowledge":
       return <Bot {...props} />;
     case "personas":
@@ -439,6 +441,13 @@ function detailSections(resource: ResourceKey, row: AnyRecord): Array<{ label: s
         { label: "用户问题", value: String(row.user_message ?? "") },
         { label: "AI 回复", value: String(row.ai_message ?? "") }
       ];
+    case "answers":
+      return [
+        { label: "题目", value: String(row.question_text ?? "") },
+        { label: "选项", value: String(row.options_text ?? "") },
+        { label: "最终选择", value: String(row.final_answer ?? "") },
+        { label: "理由", value: String(row.reason ?? "") }
+      ];
     case "personas":
       return [{ label: "人设内容", value: String(row.persona_value ?? "") }];
     default:
@@ -455,6 +464,7 @@ function detailMetaKeys(resource: ResourceKey, row: AnyRecord): string[] {
     notes: ["id", "profile_id", "site_key", "survey_id", "page_snapshot_id", "created_at"],
     translations: ["id", "profile_id", "site_key", "source_lang", "target_lang", "created_at"],
     conversations: ["id", "profile_id", "site_key", "survey_id", "created_at"],
+    answers: ["id", "profile_id", "site_key", "survey_id", "page_snapshot_id", "suggested_answer", "confidence", "persona_matched", "created_at", "updated_at"],
     personas: ["id", "profile_id", "site_key", "category", "persona_key", "confidence", "source_type", "source_id", "created_at", "updated_at"]
   };
   return (keys[resource] ?? Object.keys(row)).filter((key) => key in row);
@@ -605,6 +615,7 @@ function columnsForResource(active: ResourceConfig): string[] {
     notes: ["id", "profile_id", "site_key", "survey_id", "note_text", "created_at"],
     translations: ["id", "profile_id", "site_key", "source_lang", "target_lang", "translated_text", "created_at"],
     conversations: ["id", "profile_id", "site_key", "user_message", "ai_message", "created_at"],
+    answers: ["id", "profile_id", "site_key", "question_text", "final_answer", "reason", "created_at"],
     knowledge: ["id", "profile_id", "site_key", "scope", "source_type", "chunk_text", "created_at"],
     personas: ["id", "profile_id", "site_key", "category", "persona_key", "persona_value", "confidence", "source_type", "updated_at"]
   };
@@ -629,6 +640,10 @@ function columnLabel(column: string): string {
     persona_key: "人设键",
     persona_value: "人设内容",
     confidence: "置信度",
+    final_answer: "最终选择",
+    suggested_answer: "建议选择",
+    persona_matched: "人设匹配",
+    reason: "理由",
     note_text: "笔记",
     user_message: "用户问题",
     ai_message: "AI 回复",
@@ -656,7 +671,7 @@ function columnLabel(column: string): string {
 
 function formatResourceCell(resource: ResourceKey, column: string, value: unknown, row: AnyRecord): string {
   if (column === "chunk_text") return previewText(cleanKnowledgeText(String(value ?? "")), 180);
-  if (["note_text", "persona_value", "translated_text", "user_message", "ai_message", "question_text", "page_text", "remark"].includes(column)) {
+  if (["note_text", "persona_value", "translated_text", "user_message", "ai_message", "question_text", "options_text", "final_answer", "reason", "page_text", "remark"].includes(column)) {
     return previewText(String(value ?? ""), resource === "snapshots" ? 150 : 180);
   }
   if (column === "category") return personaCategoryLabel(value);
@@ -672,7 +687,7 @@ function formatResourceCell(resource: ResourceKey, column: string, value: unknow
 }
 
 function hasDeleteAction(resource: ResourceKey): boolean {
-  return ["surveys", "snapshots", "notes", "translations", "conversations", "knowledge", "personas"].includes(resource);
+  return ["surveys", "snapshots", "notes", "translations", "conversations", "answers", "knowledge", "personas"].includes(resource);
 }
 
 function statusLabel(value: unknown): string {
@@ -708,6 +723,7 @@ function scopeLabel(value: unknown): string {
 function sourceTypeLabel(value: unknown): string {
   const key = String(value ?? "");
   if (key === "ai_conversation") return "AI 对话";
+  if (key === "answer_record") return "答题记录";
   if (key === "note") return "笔记";
   if (key === "page_snapshot") return "页面快照";
   if (key === "manual") return "手动录入";

@@ -113,3 +113,20 @@ type SitePersona struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
+
+type AnswerRecord struct {
+	ID              int64     `json:"id"`
+	ProfileID       int64     `json:"profile_id"`
+	SiteKey         string    `json:"site_key"`
+	SurveyID        *int64    `json:"survey_id,omitempty"`
+	PageSnapshotID  *int64    `json:"page_snapshot_id,omitempty"`
+	QuestionText    string    `json:"question_text"`
+	OptionsText     *string   `json:"options_text,omitempty"`
+	SuggestedAnswer *string   `json:"suggested_answer,omitempty"`
+	FinalAnswer     string    `json:"final_answer"`
+	Reason          *string   `json:"reason,omitempty"`
+	PersonaMatched  *string   `json:"persona_matched,omitempty"`
+	Confidence      float64   `json:"confidence"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}

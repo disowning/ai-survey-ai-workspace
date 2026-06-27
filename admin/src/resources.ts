@@ -51,6 +51,13 @@ export const resources: ResourceConfig[] = [
     columns: ["id", "profile_id", "site_key", "survey_id", "user_message", "ai_message", "created_at"]
   },
   {
+    key: "answers",
+    label: "答题库",
+    endpoint: "/api/answers",
+    filters: ["profile_id", "site_key", "survey_id"],
+    columns: ["id", "profile_id", "site_key", "survey_id", "question_text", "final_answer", "reason", "created_at"]
+  },
+  {
     key: "knowledge",
     label: "知识库管理",
     endpoint: "/api/knowledge",

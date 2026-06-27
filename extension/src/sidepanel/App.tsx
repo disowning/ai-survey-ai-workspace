@@ -13,6 +13,7 @@ import {
   bindProfile,
   checkHealth,
   chatWithAI,
+  createAnswerRecord,
   createNote,
   createPersona,
   deletePersona,
@@ -20,6 +21,7 @@ import {
   ensureSite,
   ensureSurvey,
   listAIConversations,
+  listAnswerRecords,
   listNotes,
   listPersonas,
   login,
@@ -31,7 +33,7 @@ import {
 import type { SystemStatus } from "./api";
 import { extractFromActiveTab, getSelectionFromActiveTab } from "./chromeTabs";
 import { DEFAULT_API_BASE_URL } from "../shared/constants";
-import type { AIConversation, ExtractedPage, KnowledgeChunk, LocalProfile, Note, SiteDetection, SitePersona } from "../shared/types";
+import type { AIConversation, AnswerRecord, ExtractedPage, KnowledgeChunk, LocalProfile, Note, SiteDetection, SitePersona } from "../shared/types";
 import { getLastSite, getLocalProfile, getSettings, setLastSite, setLocalProfile, setSettings } from "../storage/localProfile";
 
 type Message = {
@@ -73,6 +75,7 @@ const commands: Command[] = [
 
 const hiddenCommandAliases: Command[] = [
   { id: "summary", icon: "📝", command: "/总结", target: "当前页面", detail: "生成页面摘要" },
+  { id: "record-answer", icon: "✅", command: "/记录选择", target: "A", detail: "保存最终选择", placeholder: "最终选择" },
   { id: "choose-legacy", icon: "✨", command: "/帮我选择", target: "基于真实情况", detail: "辅助判断选项" },
   { id: "translate-full", icon: "📄", command: "/翻译全文", target: "当前页", detail: "全文译成中文" },
   { id: "translate-selection", icon: "🅰️", command: "/翻译选中", target: "", detail: "翻译划词内容" },
@@ -324,8 +327,14 @@ export function App() {
         await askAI("请解释当前题目和选项含义：题目意思、每个选项含义、容易误解的词、是否像筛选题。不要编造用户资料。", "解释");
         return;
       case "/选择":
+        if (args) {
+          await recordFinalAnswer(args);
+        } else {
+          await askAI("请基于我已经提供的真实情况、历史笔记、答题库和当前页面，帮我判断更合适的选项。先解释题目和选项；如果缺少真实信息，请明确说需要我补充；如果可以建议，请给出“建议选择”和理由，并提醒我最终确认。不要编造身份或经历，不要自动提交。", "辅助选择");
+        }
+        return;
       case "/帮我选择":
-        await askAI("请基于我已经提供的真实情况、历史笔记和当前页面，帮我判断更合适的选项。先解释题目和选项；如果缺少真实信息，请明确说需要我补充；如果可以建议，请给出“建议选择”和理由，并提醒我最终确认。不要编造身份或经历，不要自动提交。", "辅助选择");
+        await askAI("请基于我已经提供的真实情况、历史笔记、答题库和当前页面，帮我判断更合适的选项。先解释题目和选项；如果缺少真实信息，请明确说需要我补充；如果可以建议，请给出“建议选择”和理由，并提醒我最终确认。不要编造身份或经历，不要自动提交。", "辅助选择");
         return;
       case "/翻译":
         await translateSmart();
@@ -352,6 +361,9 @@ export function App() {
         return;
       case "/删除人设":
         await deletePersonaByCommand(args);
+        return;
+      case "/记录选择":
+        await recordFinalAnswer(args);
         return;
       case "/历史":
       case "/搜索知识库":
@@ -511,17 +523,54 @@ export function App() {
     addMessage({ role: "system", title: "人设已删除", text: `已删除 ID ${id}` });
   }
 
+  async function recordFinalAnswer(rawAnswer: string) {
+    const finalAnswer = rawAnswer.trim();
+    if (!finalAnswer) throw new Error("请输入最终选择，例如 /选择 A 或 /记录选择 每周 1-2 次");
+    const { targetProfile, targetPage, targetSite, targetSurveyId } = await context();
+    const questionText = targetPage.questionText || targetPage.title || "";
+    if (!questionText.trim()) throw new Error("当前页面没有识别到题目，无法记录选择");
+
+    const record = await createAnswerRecord(trimmedApiBaseUrl, {
+      profile_id: targetProfile.profileId!,
+      site_key: targetSite.site_key,
+      survey_id: targetSurveyId,
+      question_text: questionText,
+      options_text: targetPage.optionsText,
+      final_answer: finalAnswer,
+      reason: "用户手动确认",
+      confidence: 1
+    });
+    addMessage({
+      role: "system",
+      title: "选择已记录",
+      text: `${record.question_text}\n最终选择：${record.final_answer}`,
+      meta: `答题库 ID ${record.id}`
+    });
+  }
+
   async function searchKB(query: string) {
     const { targetProfile, targetPage, targetSite, targetSurveyId } = await context();
     const q = query || targetPage.questionText || targetPage.title;
-    const results = await searchKnowledge(trimmedApiBaseUrl, {
+    const [answers, results] = await Promise.all([
+      listAnswerRecords(trimmedApiBaseUrl, {
+        profile_id: targetProfile.profileId!,
+        site_key: targetSite.site_key,
+        survey_id: targetSurveyId,
+        q
+      }),
+      searchKnowledge(trimmedApiBaseUrl, {
       profile_id: targetProfile.profileId!,
       site_key: targetSite.site_key,
       survey_id: targetSurveyId,
       scope: currentScope,
       q
-    });
-    addMessage({ role: "assistant", title: `历史记录 · ${results.length} 条`, text: results.length ? formatKnowledge(results) : "没有找到相关记录。", actions: ["copy", "continue"] });
+      })
+    ]);
+    const text = [
+      answers.length ? `答题库\n${formatAnswerRecords(answers)}` : "",
+      results.length ? `知识库\n${formatKnowledge(results)}` : ""
+    ].filter(Boolean).join("\n\n");
+    addMessage({ role: "assistant", title: `历史记录 · ${answers.length + results.length} 条`, text: text || "没有找到相关记录。", actions: ["copy", "continue"] });
   }
 
   async function snapshotPage() {
@@ -982,6 +1031,21 @@ function formatConversations(history: AIConversation[]): string {
     .join("\n\n");
 }
 
+function formatAnswerRecords(records: AnswerRecord[]): string {
+  return records
+    .slice(0, 6)
+    .map((item, index) => {
+      const parts = [
+        `${index + 1}. ${item.question_text}`,
+        item.options_text ? `选项：${item.options_text}` : "",
+        `最终选择：${item.final_answer}`,
+        item.reason ? `理由：${item.reason}` : ""
+      ].filter(Boolean);
+      return parts.join("\n");
+    })
+    .join("\n\n");
+}
+
 function formatPersonas(personas: SitePersona[]): string {
   return personas
     .slice(0, 20)
@@ -1078,6 +1142,7 @@ function sourceTypeLabel(value: string): string {
   if (value === "note") return "笔记";
   if (value === "page_snapshot") return "页面";
   if (value === "ai_conversation") return "AI";
+  if (value === "answer_record") return "答题";
   return value;
 }
 

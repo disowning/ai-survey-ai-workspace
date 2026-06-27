@@ -93,6 +93,12 @@ func New(db *sql.DB, aiClient *ai.Client, auth AuthConfig) *gin.Engine {
 			protected.PUT("/personas/:id", s.updateSitePersona)
 			protected.DELETE("/personas/:id", s.deleteSitePersona)
 
+			protected.POST("/answers", s.createAnswerRecord)
+			protected.GET("/answers", s.listAnswerRecords)
+			protected.GET("/answers/:id", s.getAnswerRecord)
+			protected.PUT("/answers/:id", s.updateAnswerRecord)
+			protected.DELETE("/answers/:id", s.deleteAnswerRecord)
+
 			protected.GET("/export/markdown", s.exportMarkdown)
 			protected.GET("/export/notes.csv", s.exportNotesCSV)
 			protected.GET("/export/daily-report", s.exportDailyReport)

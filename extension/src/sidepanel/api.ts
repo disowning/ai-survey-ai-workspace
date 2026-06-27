@@ -1,4 +1,5 @@
 import type {
+  AnswerRecord,
   AIConversation,
   KnowledgeChunk,
   LocalProfile,
@@ -333,6 +334,56 @@ export async function deletePersona(apiBaseUrl: string, id: number, profileId: n
   if (!response.ok) {
     throw new Error(await readError(response, "删除人设失败"));
   }
+}
+
+export async function createAnswerRecord(
+  apiBaseUrl: string,
+  payload: {
+    profile_id: number;
+    site_key: string;
+    survey_id?: number;
+    page_snapshot_id?: number;
+    question_text: string;
+    options_text?: string;
+    suggested_answer?: string;
+    final_answer: string;
+    reason?: string;
+    persona_matched?: string;
+    confidence?: number;
+  }
+): Promise<AnswerRecord> {
+  const response = await fetch(`${apiBaseUrl}/api/answers`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response, "保存答题记录失败"));
+  }
+
+  return (await response.json()) as AnswerRecord;
+}
+
+export async function listAnswerRecords(
+  apiBaseUrl: string,
+  params: { profile_id: number; site_key: string; survey_id?: number; q?: string }
+): Promise<AnswerRecord[]> {
+  const query = new URLSearchParams({
+    profile_id: String(params.profile_id),
+    site_key: params.site_key,
+    limit: "12"
+  });
+  if (params.survey_id) query.set("survey_id", String(params.survey_id));
+  if (params.q) query.set("q", params.q);
+
+  const response = await fetch(`${apiBaseUrl}/api/answers?${query.toString()}`, { headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await readError(response, "读取答题库失败"));
+  }
+
+  const data = (await response.json()) as { items: AnswerRecord[] };
+  return data.items;
 }
 
 function authHeaders(): HeadersInit {
