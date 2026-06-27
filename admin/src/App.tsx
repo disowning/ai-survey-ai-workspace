@@ -21,7 +21,7 @@ import {
   UserRound,
   XCircle
 } from "lucide-react";
-import { deleteResource, downloadExport, listResource, login, setAuthToken } from "./api";
+import { createResource, deleteResource, downloadExport, listResource, login, setAuthToken, updateResource } from "./api";
 import { resources } from "./resources";
 import type { AnyRecord, ResourceConfig, ResourceKey } from "./types";
 
@@ -47,6 +47,9 @@ export function App() {
   const [limit, setLimit] = useState(100);
   const [offset, setOffset] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [configMode, setConfigMode] = useState<"create" | "edit">("create");
+  const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
 
   const active = useMemo(() => resources.find((item) => item.key === activeKey) ?? resources[0], [activeKey]);
   const trimmedApiBaseUrl = apiBaseUrl.replace(/\/+$/, "");
@@ -69,6 +72,7 @@ export function App() {
     if (!loggedIn) return;
     setOffset(0);
     setQuery("");
+    setConfigOpen(false);
     void load(active, 0);
   }, [activeKey, loggedIn]);
 
@@ -126,6 +130,35 @@ export function App() {
       const data = await listResource(trimmedApiBaseUrl, active, filters, { limit, offset });
       setRows(data);
       setSelected(data[0] ?? null);
+    });
+  }
+
+  function openCreateConfig() {
+    setConfigMode("create");
+    setConfigDraft(defaultConfigDraft(active.key, filters));
+    setConfigOpen(true);
+  }
+
+  function openEditConfig() {
+    if (!selected) return;
+    setConfigMode("edit");
+    setConfigDraft(defaultConfigDraft(active.key, filters, selected));
+    setConfigOpen(true);
+  }
+
+  async function saveConfig() {
+    await run(async () => {
+      const payload = configPayload(active.key, configDraft);
+      if (configMode === "edit" && selected) {
+        await updateResource(trimmedApiBaseUrl, active, selected, payload);
+      } else {
+        await createResource(trimmedApiBaseUrl, active, payload);
+      }
+      setConfigOpen(false);
+      const data = await listResource(trimmedApiBaseUrl, active, filters, { limit, offset: 0 });
+      setRows(data);
+      setSelected(data[0] ?? null);
+      setOffset(0);
     });
   }
 
@@ -252,6 +285,16 @@ export function App() {
             </div>
 
             <div className="export-buttons">
+              {isConfigurableResource(active.key) ? (
+                <button type="button" onClick={openCreateConfig}>
+                  新增配置
+                </button>
+              ) : null}
+              {isConfigurableResource(active.key) ? (
+                <button type="button" onClick={openEditConfig} disabled={!selected}>
+                  编辑配置
+                </button>
+              ) : null}
               <button type="button" onClick={() => openExport("/api/export/markdown", true)}>
                 <FileText size={15} aria-hidden="true" />
                 Markdown
@@ -288,6 +331,18 @@ export function App() {
         />
 
         {error ? <div className="error-banner">{error}</div> : null}
+
+        {configOpen && isConfigurableResource(active.key) ? (
+          <ConfigEditor
+            resource={active.key}
+            mode={configMode}
+            draft={configDraft}
+            busy={busy}
+            onChange={setConfigDraft}
+            onCancel={() => setConfigOpen(false)}
+            onSave={() => void saveConfig()}
+          />
+        ) : null}
 
         <div className="workspace">
           <div className="table-wrap">
@@ -600,10 +655,131 @@ function FilterBar({
   );
 }
 
+function ConfigEditor({
+  resource,
+  mode,
+  draft,
+  busy,
+  onChange,
+  onCancel,
+  onSave
+}: {
+  resource: ResourceKey;
+  mode: "create" | "edit";
+  draft: Record<string, string>;
+  busy: boolean;
+  onChange: (draft: Record<string, string>) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const fields = configFields(resource);
+  return (
+    <section className="config-editor">
+      <div className="config-editor-heading">
+        <div>
+          <span className="eyebrow">{mode === "edit" ? "Edit Config" : "New Config"}</span>
+          <h3>{resource === "personas" ? "站点人设配置" : "问卷网站配置"}</h3>
+          <p>{resource === "personas" ? "人设按 Profile + 网站绑定，不能保存密码、cookie、token 或验证码。" : "配置问卷网站识别用的 site_key、名称和域名。"}</p>
+        </div>
+        <div className="config-editor-actions">
+          <button className="secondary" type="button" onClick={onCancel} disabled={busy}>
+            取消
+          </button>
+          <button type="button" onClick={onSave} disabled={busy || !configDraftValid(resource, draft)}>
+            {busy ? "保存中" : "保存配置"}
+          </button>
+        </div>
+      </div>
+
+      <div className="config-fields">
+        {fields.map((field) => (
+          <label key={field.key} className={field.multiline ? "wide-field" : ""}>
+            <span>{field.label}</span>
+            {field.multiline ? (
+              <textarea value={draft[field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => onChange({ ...draft, [field.key]: event.target.value })} />
+            ) : (
+              <input value={draft[field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => onChange({ ...draft, [field.key]: event.target.value })} />
+            )}
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function rowMatchesQuery(row: AnyRecord, query: string): boolean {
   const value = query.trim().toLowerCase();
   if (!value) return true;
   return JSON.stringify(row).toLowerCase().includes(value);
+}
+
+function isConfigurableResource(resource: ResourceKey): boolean {
+  return resource === "sites" || resource === "personas";
+}
+
+function configFields(resource: ResourceKey): Array<{ key: string; label: string; placeholder?: string; multiline?: boolean }> {
+  if (resource === "sites") {
+    return [
+      { key: "site_key", label: "site_key", placeholder: "ipsos" },
+      { key: "site_name", label: "网站名称", placeholder: "Ipsos" },
+      { key: "domain", label: "域名", placeholder: "ipsos.com" }
+    ];
+  }
+  return [
+    { key: "profile_id", label: "Profile ID", placeholder: "1" },
+    { key: "site_key", label: "site_key", placeholder: "ipsos" },
+    { key: "category", label: "分类", placeholder: "preference / consumer / demographic" },
+    { key: "persona_key", label: "人设键", placeholder: "drink_preference" },
+    { key: "persona_value", label: "人设内容", placeholder: "喜欢喝无糖饮料", multiline: true },
+    { key: "confidence", label: "置信度", placeholder: "1" }
+  ];
+}
+
+function defaultConfigDraft(resource: ResourceKey, filters: Record<string, string>, row?: AnyRecord | null): Record<string, string> {
+  if (resource === "sites") {
+    return {
+      site_key: String(row?.site_key ?? filters.site_key ?? ""),
+      site_name: String(row?.site_name ?? ""),
+      domain: String(row?.domain ?? "")
+    };
+  }
+  return {
+    profile_id: String(row?.profile_id ?? filters.profile_id ?? ""),
+    site_key: String(row?.site_key ?? filters.site_key ?? ""),
+    category: String(row?.category ?? "preference"),
+    persona_key: String(row?.persona_key ?? ""),
+    persona_value: String(row?.persona_value ?? ""),
+    confidence: String(row?.confidence ?? "1")
+  };
+}
+
+function configDraftValid(resource: ResourceKey, draft: Record<string, string>): boolean {
+  if (resource === "sites") return Boolean(draft.site_key?.trim());
+  return Boolean(draft.profile_id?.trim() && draft.site_key?.trim() && draft.persona_value?.trim());
+}
+
+function configPayload(resource: ResourceKey, draft: Record<string, string>): AnyRecord {
+  if (resource === "sites") {
+    return {
+      site_key: draft.site_key?.trim(),
+      site_name: emptyToUndefined(draft.site_name),
+      domain: emptyToUndefined(draft.domain)
+    };
+  }
+  return {
+    profile_id: Number(draft.profile_id),
+    site_key: draft.site_key?.trim(),
+    category: draft.category?.trim() || "preference",
+    persona_key: emptyToUndefined(draft.persona_key),
+    persona_value: draft.persona_value?.trim(),
+    confidence: Number(draft.confidence || 1),
+    source_type: "manual"
+  };
+}
+
+function emptyToUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || undefined;
 }
 
 function columnsForResource(active: ResourceConfig): string[] {
