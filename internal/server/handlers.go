@@ -56,6 +56,19 @@ func handleDBError(c *gin.Context, err error) {
 	serverError(c, err)
 }
 
+func writeDeleteResult(c *gin.Context, result sql.Result) bool {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		handleDBError(c, err)
+		return false
+	}
+	if rowsAffected == 0 {
+		notFound(c)
+		return false
+	}
+	return true
+}
+
 func (s *Server) systemStatus(c *gin.Context) {
 	ctx, cancel := requestContext(c)
 	defer cancel()
@@ -941,6 +954,30 @@ func (s *Server) updateSurvey(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
+func (s *Server) deleteSurvey(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM surveys
+		WHERE id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	if !writeDeleteResult(c, result) {
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 type pageSnapshotRequest struct {
 	ProfileID    int64   `json:"profile_id"`
 	SiteKey      string  `json:"site_key"`
@@ -1046,6 +1083,53 @@ func (s *Server) getPageSnapshot(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, row)
+}
+
+func (s *Server) deletePageSnapshot(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM knowledge_chunks
+		WHERE source_type = 'page_snapshot'
+			AND source_id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	result, err := tx.ExecContext(ctx, `
+		DELETE FROM page_snapshots
+		WHERE id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	if !writeDeleteResult(c, result) {
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		handleDBError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 type noteRequest struct {
@@ -1195,7 +1279,25 @@ func (s *Server) deleteNote(c *gin.Context) {
 	ctx, cancel := requestContext(c)
 	defer cancel()
 
-	result, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM knowledge_chunks
+		WHERE source_type = 'note'
+			AND source_id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	result, err := tx.ExecContext(ctx, `
 		DELETE FROM notes
 		WHERE id = $1
 			AND ($2::bigint IS NULL OR profile_id = $2)
@@ -1205,16 +1307,13 @@ func (s *Server) deleteNote(c *gin.Context) {
 		handleDBError(c, err)
 		return
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
+	if !writeDeleteResult(c, result) {
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		handleDBError(c, err)
 		return
 	}
-	if rowsAffected == 0 {
-		notFound(c)
-		return
-	}
-
 	c.Status(http.StatusNoContent)
 }
 
@@ -1361,6 +1460,31 @@ func (s *Server) getTranslation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, row)
+}
+
+func (s *Server) deleteTranslation(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM translations
+		WHERE id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	if !writeDeleteResult(c, result) {
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func containsSensitiveCredential(text string) bool {
@@ -1811,6 +1935,54 @@ func (s *Server) getAIConversation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, row)
+}
+
+func (s *Server) deleteAIConversation(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM knowledge_chunks
+		WHERE source_type = 'ai_conversation'
+			AND source_id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	result, err := tx.ExecContext(ctx, `
+		DELETE FROM ai_conversations
+		WHERE id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+			AND ($4::bigint IS NULL OR survey_id = $4)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"), optionalInt64Query(c, "survey_id"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	if !writeDeleteResult(c, result) {
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		handleDBError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 type personaRequest struct {

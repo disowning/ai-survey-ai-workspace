@@ -21,7 +21,7 @@ import {
   UserRound,
   XCircle
 } from "lucide-react";
-import { deleteKnowledge, deletePersona, downloadExport, listResource, login, setAuthToken } from "./api";
+import { deleteResource, downloadExport, listResource, login, setAuthToken } from "./api";
 import { resources } from "./resources";
 import type { AnyRecord, ResourceConfig, ResourceKey } from "./types";
 
@@ -120,12 +120,9 @@ export function App() {
   async function handleDeleteRow(row: AnyRecord) {
     const id = Number(row.id);
     if (!Number.isInteger(id) || id <= 0) return;
+    if (!window.confirm(`确认删除 ${active.label} 的 ID ${id}？`)) return;
     await run(async () => {
-      if (active.key === "personas") {
-        await deletePersona(trimmedApiBaseUrl, id, filters);
-      } else {
-        await deleteKnowledge(trimmedApiBaseUrl, id, filters);
-      }
+      await deleteResource(trimmedApiBaseUrl, active, id, filters);
       const data = await listResource(trimmedApiBaseUrl, active, filters, { limit, offset });
       setRows(data);
       setSelected(data[0] ?? null);
@@ -675,7 +672,7 @@ function formatResourceCell(resource: ResourceKey, column: string, value: unknow
 }
 
 function hasDeleteAction(resource: ResourceKey): boolean {
-  return resource === "knowledge" || resource === "personas";
+  return ["surveys", "snapshots", "notes", "translations", "conversations", "knowledge", "personas"].includes(resource);
 }
 
 function statusLabel(value: unknown): string {

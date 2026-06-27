@@ -44,31 +44,19 @@ export async function listResource(
   return data.items ?? [];
 }
 
-export async function deleteKnowledge(apiBaseUrl: string, id: number, filters: Record<string, string>): Promise<void> {
+export async function deleteResource(apiBaseUrl: string, config: ResourceConfig, id: number, filters: Record<string, string>): Promise<void> {
   const params = new URLSearchParams();
-  if (filters.profile_id) params.set("profile_id", filters.profile_id);
-  if (filters.site_key) params.set("site_key", filters.site_key);
-
-  const response = await fetch(`${apiBaseUrl}/api/knowledge/${id}?${params.toString()}`, {
-    method: "DELETE",
-    headers: authHeaders()
-  });
-  if (!response.ok) {
-    throw new Error(await readError(response, "删除知识库内容失败"));
+  for (const key of config.filters) {
+    const value = filters[key]?.trim();
+    if (value) params.set(key, value);
   }
-}
 
-export async function deletePersona(apiBaseUrl: string, id: number, filters: Record<string, string>): Promise<void> {
-  const params = new URLSearchParams();
-  if (filters.profile_id) params.set("profile_id", filters.profile_id);
-  if (filters.site_key) params.set("site_key", filters.site_key);
-
-  const response = await fetch(`${apiBaseUrl}/api/personas/${id}?${params.toString()}`, {
+  const response = await fetch(`${apiBaseUrl}${config.endpoint}/${id}?${params.toString()}`, {
     method: "DELETE",
     headers: authHeaders()
   });
   if (!response.ok) {
-    throw new Error(await readError(response, "删除站点人设失败"));
+    throw new Error(await readError(response, "删除记录失败"));
   }
 }
 

@@ -59,10 +59,12 @@ func New(db *sql.DB, aiClient *ai.Client, auth AuthConfig) *gin.Engine {
 			protected.GET("/surveys", s.listSurveys)
 			protected.GET("/surveys/:id", s.getSurvey)
 			protected.PUT("/surveys/:id", s.updateSurvey)
+			protected.DELETE("/surveys/:id", s.deleteSurvey)
 
 			protected.POST("/page-snapshots", s.createPageSnapshot)
 			protected.GET("/page-snapshots", s.listPageSnapshots)
 			protected.GET("/page-snapshots/:id", s.getPageSnapshot)
+			protected.DELETE("/page-snapshots/:id", s.deletePageSnapshot)
 
 			protected.POST("/notes", s.createNote)
 			protected.GET("/notes", s.listNotes)
@@ -73,10 +75,12 @@ func New(db *sql.DB, aiClient *ai.Client, auth AuthConfig) *gin.Engine {
 			protected.POST("/ai/translate", s.translateText)
 			protected.GET("/translations", s.listTranslations)
 			protected.GET("/translations/:id", s.getTranslation)
+			protected.DELETE("/translations/:id", s.deleteTranslation)
 
 			protected.POST("/ai/chat", s.chatWithAI)
 			protected.GET("/ai/conversations", s.listAIConversations)
 			protected.GET("/ai/conversations/:id", s.getAIConversation)
+			protected.DELETE("/ai/conversations/:id", s.deleteAIConversation)
 
 			protected.POST("/knowledge", s.createKnowledgeChunk)
 			protected.GET("/knowledge", s.listKnowledgeChunks)
