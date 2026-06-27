@@ -21,7 +21,7 @@ import {
   UserRound,
   XCircle
 } from "lucide-react";
-import { deleteKnowledge, downloadExport, listResource, login, setAuthToken } from "./api";
+import { deleteKnowledge, deletePersona, downloadExport, listResource, login, setAuthToken } from "./api";
 import { resources } from "./resources";
 import type { AnyRecord, ResourceConfig, ResourceKey } from "./types";
 
@@ -117,11 +117,15 @@ export function App() {
     setSelected(null);
   }
 
-  async function handleDeleteKnowledge(row: AnyRecord) {
+  async function handleDeleteRow(row: AnyRecord) {
     const id = Number(row.id);
     if (!Number.isInteger(id) || id <= 0) return;
     await run(async () => {
-      await deleteKnowledge(trimmedApiBaseUrl, id, filters);
+      if (active.key === "personas") {
+        await deletePersona(trimmedApiBaseUrl, id, filters);
+      } else {
+        await deleteKnowledge(trimmedApiBaseUrl, id, filters);
+      }
       const data = await listResource(trimmedApiBaseUrl, active, filters, { limit, offset });
       setRows(data);
       setSelected(data[0] ?? null);
@@ -296,7 +300,7 @@ export function App() {
                   {tableColumns.map((column) => (
                     <th key={column}>{columnLabel(column)}</th>
                   ))}
-                  {active.key === "knowledge" ? <th>操作</th> : null}
+                  {hasDeleteAction(active.key) ? <th>操作</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -307,9 +311,9 @@ export function App() {
                         {formatResourceCell(active.key, column, row[column], row)}
                       </td>
                     ))}
-                    {active.key === "knowledge" ? (
+                    {hasDeleteAction(active.key) ? (
                       <td>
-                        <button className="icon-button danger" type="button" onClick={() => void handleDeleteKnowledge(row)}>
+                        <button className="icon-button danger" type="button" onClick={() => void handleDeleteRow(row)}>
                           <Trash2 size={15} aria-hidden="true" />
                         </button>
                       </td>
@@ -318,7 +322,7 @@ export function App() {
                 ))}
                 {!visibleRows.length ? (
                   <tr>
-                    <td colSpan={tableColumns.length + (active.key === "knowledge" ? 1 : 0)} className="empty">
+                    <td colSpan={tableColumns.length + (hasDeleteAction(active.key) ? 1 : 0)} className="empty">
                       暂无数据
                     </td>
                   </tr>
@@ -372,6 +376,8 @@ function iconForResource(key: ResourceKey) {
       return <MessageSquareText {...props} />;
     case "knowledge":
       return <Bot {...props} />;
+    case "personas":
+      return <UserRound {...props} />;
     default:
       return <Database {...props} />;
   }
@@ -379,6 +385,7 @@ function iconForResource(key: ResourceKey) {
 
 function RecordDetail({ resource, row }: { resource: ResourceKey; row: AnyRecord }) {
   if (resource === "knowledge") return <KnowledgeDetail row={row} />;
+  if (resource === "personas") return <PersonaDetail row={row} />;
 
   const sections = detailSections(resource, row);
   return (
@@ -435,6 +442,8 @@ function detailSections(resource: ResourceKey, row: AnyRecord): Array<{ label: s
         { label: "用户问题", value: String(row.user_message ?? "") },
         { label: "AI 回复", value: String(row.ai_message ?? "") }
       ];
+    case "personas":
+      return [{ label: "人设内容", value: String(row.persona_value ?? "") }];
     default:
       return [];
   }
@@ -448,7 +457,8 @@ function detailMetaKeys(resource: ResourceKey, row: AnyRecord): string[] {
     snapshots: ["id", "profile_id", "site_key", "survey_id", "url", "page_title", "language", "created_at"],
     notes: ["id", "profile_id", "site_key", "survey_id", "page_snapshot_id", "created_at"],
     translations: ["id", "profile_id", "site_key", "source_lang", "target_lang", "created_at"],
-    conversations: ["id", "profile_id", "site_key", "survey_id", "created_at"]
+    conversations: ["id", "profile_id", "site_key", "survey_id", "created_at"],
+    personas: ["id", "profile_id", "site_key", "category", "persona_key", "confidence", "source_type", "source_id", "created_at", "updated_at"]
   };
   return (keys[resource] ?? Object.keys(row)).filter((key) => key in row);
 }
@@ -469,6 +479,28 @@ function KnowledgeDetail({ row }: { row: AnyRecord }) {
         <MetaItem label="来源" value={sourceTypeLabel(row.source_type)} />
         <MetaItem label="来源 ID" value={formatCell(row.source_id) || "-"} />
         <MetaItem label="创建时间" value={formatDateTime(row.created_at)} />
+      </div>
+    </div>
+  );
+}
+
+function PersonaDetail({ row }: { row: AnyRecord }) {
+  return (
+    <div className="knowledge-detail">
+      <section className="knowledge-content">
+        <span>人设内容</span>
+        <p>{String(row.persona_value ?? "") || "-"}</p>
+      </section>
+
+      <div className="knowledge-meta-grid">
+        <MetaItem label="Profile" value={formatCell(row.profile_id)} />
+        <MetaItem label="网站" value={formatCell(row.site_key)} />
+        <MetaItem label="分类" value={personaCategoryLabel(row.category)} />
+        <MetaItem label="键" value={formatCell(row.persona_key)} />
+        <MetaItem label="置信度" value={formatCell(row.confidence)} />
+        <MetaItem label="来源" value={sourceTypeLabel(row.source_type)} />
+        <MetaItem label="来源 ID" value={formatCell(row.source_id) || "-"} />
+        <MetaItem label="更新时间" value={formatDateTime(row.updated_at)} />
       </div>
     </div>
   );
@@ -576,7 +608,8 @@ function columnsForResource(active: ResourceConfig): string[] {
     notes: ["id", "profile_id", "site_key", "survey_id", "note_text", "created_at"],
     translations: ["id", "profile_id", "site_key", "source_lang", "target_lang", "translated_text", "created_at"],
     conversations: ["id", "profile_id", "site_key", "user_message", "ai_message", "created_at"],
-    knowledge: ["id", "profile_id", "site_key", "scope", "source_type", "chunk_text", "created_at"]
+    knowledge: ["id", "profile_id", "site_key", "scope", "source_type", "chunk_text", "created_at"],
+    personas: ["id", "profile_id", "site_key", "category", "persona_key", "persona_value", "confidence", "source_type", "updated_at"]
   };
   return columns[active.key] ?? active.columns;
 }
@@ -595,6 +628,10 @@ function columnLabel(column: string): string {
     source_type: "来源",
     source_id: "来源 ID",
     chunk_text: "内容",
+    category: "分类",
+    persona_key: "人设键",
+    persona_value: "人设内容",
+    confidence: "置信度",
     note_text: "笔记",
     user_message: "用户问题",
     ai_message: "AI 回复",
@@ -622,9 +659,10 @@ function columnLabel(column: string): string {
 
 function formatResourceCell(resource: ResourceKey, column: string, value: unknown, row: AnyRecord): string {
   if (column === "chunk_text") return previewText(cleanKnowledgeText(String(value ?? "")), 180);
-  if (["note_text", "translated_text", "user_message", "ai_message", "question_text", "page_text", "remark"].includes(column)) {
+  if (["note_text", "persona_value", "translated_text", "user_message", "ai_message", "question_text", "page_text", "remark"].includes(column)) {
     return previewText(String(value ?? ""), resource === "snapshots" ? 150 : 180);
   }
+  if (column === "category") return personaCategoryLabel(value);
   if (column === "scope") return scopeLabel(value);
   if (column === "source_type") return sourceTypeLabel(value);
   if (column === "created_at" || column === "updated_at") return formatDateTime(value);
@@ -634,6 +672,10 @@ function formatResourceCell(resource: ResourceKey, column: string, value: unknow
   if (column === "status") return statusLabel(value);
   if (column === "source_lang" || column === "target_lang" || column === "language") return String(value || "-");
   return formatCell(value);
+}
+
+function hasDeleteAction(resource: ResourceKey): boolean {
+  return resource === "knowledge" || resource === "personas";
 }
 
 function statusLabel(value: unknown): string {
@@ -675,6 +717,19 @@ function sourceTypeLabel(value: unknown): string {
   return key || "-";
 }
 
+function personaCategoryLabel(value: unknown): string {
+  const key = String(value ?? "");
+  if (key === "basic") return "基础";
+  if (key === "demographic") return "人口属性";
+  if (key === "consumer") return "消费";
+  if (key === "device") return "设备";
+  if (key === "lifestyle") return "生活方式";
+  if (key === "screening") return "筛选";
+  if (key === "preference") return "偏好";
+  if (key === "avoid") return "避免";
+  return key || "-";
+}
+
 function formatDateTime(value: unknown): string {
   if (!value) return "-";
   const date = new Date(String(value));
@@ -705,6 +760,7 @@ function formatDetailValue(key: string, value: unknown): string {
   if (key === "created_at" || key === "updated_at") return formatDateTime(value);
   if (key === "status") return statusLabel(value);
   if (key === "scope") return scopeLabel(value);
+  if (key === "category") return personaCategoryLabel(value);
   if (key === "source_type") return sourceTypeLabel(value);
   if (key === "profile_id") return value ? `Profile ${String(value)}` : "-";
   if (key === "survey_id" || key === "page_snapshot_id") return value ? String(value) : "-";

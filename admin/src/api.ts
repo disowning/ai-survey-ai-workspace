@@ -58,6 +58,20 @@ export async function deleteKnowledge(apiBaseUrl: string, id: number, filters: R
   }
 }
 
+export async function deletePersona(apiBaseUrl: string, id: number, filters: Record<string, string>): Promise<void> {
+  const params = new URLSearchParams();
+  if (filters.profile_id) params.set("profile_id", filters.profile_id);
+  if (filters.site_key) params.set("site_key", filters.site_key);
+
+  const response = await fetch(`${apiBaseUrl}/api/personas/${id}?${params.toString()}`, {
+    method: "DELETE",
+    headers: authHeaders()
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "删除站点人设失败"));
+  }
+}
+
 export async function downloadExport(apiBaseUrl: string, path: string, filters: Record<string, string>): Promise<Blob> {
   const params = new URLSearchParams();
   if (filters.profile_id) params.set("profile_id", filters.profile_id);

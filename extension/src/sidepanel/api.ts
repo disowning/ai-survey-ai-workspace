@@ -4,6 +4,7 @@ import type {
   LocalProfile,
   Note,
   SiteDetection,
+  SitePersona,
   SnapshotPayload,
   Survey,
   Translation
@@ -274,6 +275,64 @@ export async function searchKnowledge(
 
   const data = (await response.json()) as { items: KnowledgeChunk[] };
   return data.items;
+}
+
+export async function createPersona(
+  apiBaseUrl: string,
+  payload: {
+    profile_id: number;
+    site_key: string;
+    category?: string;
+    persona_key?: string;
+    persona_value: string;
+    confidence?: number;
+    source_type?: string;
+    source_id?: number;
+  }
+): Promise<SitePersona> {
+  const response = await fetch(`${apiBaseUrl}/api/personas`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response, "保存人设失败"));
+  }
+
+  return (await response.json()) as SitePersona;
+}
+
+export async function listPersonas(apiBaseUrl: string, profileId: number, siteKey: string, category?: string): Promise<SitePersona[]> {
+  const params = new URLSearchParams({
+    profile_id: String(profileId),
+    site_key: siteKey,
+    limit: "50"
+  });
+  if (category) params.set("category", category);
+
+  const response = await fetch(`${apiBaseUrl}/api/personas?${params.toString()}`, { headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await readError(response, "读取站点人设失败"));
+  }
+
+  const data = (await response.json()) as { items: SitePersona[] };
+  return data.items;
+}
+
+export async function deletePersona(apiBaseUrl: string, id: number, profileId: number, siteKey: string): Promise<void> {
+  const params = new URLSearchParams({
+    profile_id: String(profileId),
+    site_key: siteKey
+  });
+  const response = await fetch(`${apiBaseUrl}/api/personas/${id}?${params.toString()}`, {
+    method: "DELETE",
+    headers: authHeaders()
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response, "删除人设失败"));
+  }
 }
 
 function authHeaders(): HeadersInit {

@@ -56,5 +56,12 @@ export const resources: ResourceConfig[] = [
     endpoint: "/api/knowledge",
     filters: ["profile_id", "site_key", "survey_id", "scope"],
     columns: ["id", "profile_id", "site_key", "survey_id", "scope", "source_type", "chunk_text", "created_at"]
+  },
+  {
+    key: "personas",
+    label: "站点人设库",
+    endpoint: "/api/personas",
+    filters: ["profile_id", "site_key", "category"],
+    columns: ["id", "profile_id", "site_key", "category", "persona_key", "persona_value", "confidence", "source_type", "updated_at"]
   }
 ];

@@ -6,14 +6,15 @@ export type ResourceKey =
   | "notes"
   | "translations"
   | "conversations"
-  | "knowledge";
+  | "knowledge"
+  | "personas";
 
 export type ResourceConfig = {
   key: ResourceKey;
   label: string;
   endpoint: string;
   columns: string[];
-  filters: Array<"profile_id" | "site_key" | "survey_id" | "scope">;
+  filters: Array<"profile_id" | "site_key" | "survey_id" | "scope" | "category">;
 };
 
 export type ApiListResponse<T> = {

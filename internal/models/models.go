@@ -99,3 +99,17 @@ type KnowledgeChunk struct {
 	ChunkText  string    `json:"chunk_text"`
 	CreatedAt  time.Time `json:"created_at"`
 }
+
+type SitePersona struct {
+	ID           int64     `json:"id"`
+	ProfileID    int64     `json:"profile_id"`
+	SiteKey      string    `json:"site_key"`
+	Category     string    `json:"category"`
+	PersonaKey   string    `json:"persona_key"`
+	PersonaValue string    `json:"persona_value"`
+	Confidence   float64   `json:"confidence"`
+	SourceType   string    `json:"source_type"`
+	SourceID     *int64    `json:"source_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}

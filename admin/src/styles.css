@@ -496,6 +496,7 @@ td {
 .column-user-message,
 .column-ai-message,
 .column-question-text,
+.column-persona-value,
 .column-page-title,
 .column-remark {
   max-width: 520px;

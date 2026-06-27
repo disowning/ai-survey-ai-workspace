@@ -101,3 +101,17 @@ export type KnowledgeChunk = {
   chunk_text: string;
   created_at: string;
 };
+
+export type SitePersona = {
+  id: number;
+  profile_id: number;
+  site_key: string;
+  category: string;
+  persona_key: string;
+  persona_value: string;
+  confidence: number;
+  source_type: string;
+  source_id?: number;
+  created_at: string;
+  updated_at: string;
+};

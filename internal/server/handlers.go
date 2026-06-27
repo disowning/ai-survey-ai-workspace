@@ -269,6 +269,26 @@ func scanKnowledgeChunk(s scanner) (models.KnowledgeChunk, error) {
 	return row, err
 }
 
+func scanSitePersona(s scanner) (models.SitePersona, error) {
+	var row models.SitePersona
+	var sourceID sql.NullInt64
+	err := s.Scan(
+		&row.ID,
+		&row.ProfileID,
+		&row.SiteKey,
+		&row.Category,
+		&row.PersonaKey,
+		&row.PersonaValue,
+		&row.Confidence,
+		&row.SourceType,
+		&sourceID,
+		&row.CreatedAt,
+		&row.UpdatedAt,
+	)
+	row.SourceID = nullInt64Ptr(sourceID)
+	return row, err
+}
+
 type profileRequest struct {
 	ProfileKey  string  `json:"profile_key"`
 	ProfileName *string `json:"profile_name"`
@@ -1348,9 +1368,11 @@ func containsSensitiveCredential(text string) bool {
 	sensitiveMarkers := []string{
 		"password",
 		"passwd",
+		"pwd:",
 		"refresh_token",
 		"access_token",
 		"id_token",
+		"token:",
 		"cookie:",
 		"set-cookie",
 		"authorization:",
@@ -1358,6 +1380,15 @@ func containsSensitiveCredential(text string) bool {
 		"client_secret",
 		"api_key",
 		"apikey",
+		"api key",
+		"secret:",
+		"captcha",
+		"verification code",
+		"验证码",
+		"动态码",
+		"短信码",
+		"otp",
+		"2fa",
 	}
 	for _, marker := range sensitiveMarkers {
 		if strings.Contains(lower, marker) {
@@ -1421,6 +1452,11 @@ func (s *Server) chatWithAI(c *gin.Context) {
 		handleDBError(c, err)
 		return
 	}
+	personas, err := s.recentPersonaContext(ctx, req.ProfileID, req.SiteKey)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
 	knowledge, err := s.relatedKnowledgeContext(ctx, req.ProfileID, req.SiteKey, req.SurveyID, req.Scope, req.UserMessage)
 	if err != nil {
 		handleDBError(c, err)
@@ -1434,7 +1470,7 @@ func (s *Server) chatWithAI(c *gin.Context) {
 
 你的任务是帮助用户快速理解当前问卷页面，包括翻译、解释题目、总结页面、整理笔记、检索历史记录、对比选项，并在用户明确要求时基于用户已经提供的真实情况给出选择建议。
 
-你只能基于系统提供的当前页面内容、当前 Profile 历史笔记、当前网站历史记录和当前问卷上下文回答。
+你只能基于系统提供的当前页面内容、当前站点人设库、当前 Profile 历史笔记、当前网站历史记录和当前问卷上下文回答。
 你不能编造页面中没有的信息。
 你不能编造用户身份、经历、收入、年龄、地区、消费习惯等事实。
 你不能替用户自动提交问卷，也不能指导批量操作、绕过风控或处理验证码。
@@ -1442,13 +1478,13 @@ func (s *Server) chatWithAI(c *gin.Context) {
 你不能处理账号密码、cookie、refresh token、API key 等敏感凭证。
 如果用户要求“帮我选择/推荐选项”，你可以：
 1. 先解释题目和各选项含义；
-2. 只基于用户消息、历史笔记或页面中已有的真实信息做建议；
-3. 如果缺少真实信息，先说明需要用户补充，不要猜测；
+2. 优先参考当前页面内容，其次参考站点人设库、用户消息和历史笔记做建议；
+3. 如果人设库缺失、冲突或不足以判断，必须说明需要用户确认，不要猜测；
 4. 输出“建议选择/不确定/需要你确认”，不得声称已经替用户作答。`,
 		},
 		{
 			Role:    "user",
-			Content: buildChatContext(req, notes, snapshots, knowledge),
+			Content: buildChatContext(req, personas, notes, snapshots, knowledge),
 		},
 	}, 0.3)
 	if err != nil {
@@ -1540,7 +1576,59 @@ func (s *Server) recentSnapshotContext(ctx context.Context, profileID int64, sit
 	return builder.String(), rows.Err()
 }
 
-func buildChatContext(req chatRequest, notes, snapshots, knowledge string) string {
+func (s *Server) recentPersonaContext(ctx context.Context, profileID int64, siteKey string) (string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT category, persona_key, persona_value, confidence, updated_at
+		FROM site_personas
+		WHERE profile_id = $1
+			AND site_key = $2
+		ORDER BY
+			CASE category
+				WHEN 'basic' THEN 0
+				WHEN 'demographic' THEN 1
+				WHEN 'screening' THEN 2
+				WHEN 'consumer' THEN 3
+				WHEN 'device' THEN 4
+				WHEN 'lifestyle' THEN 5
+				WHEN 'preference' THEN 6
+				WHEN 'avoid' THEN 7
+				ELSE 8
+			END ASC,
+			updated_at DESC
+		LIMIT 20
+	`, profileID, siteKey)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	var builder strings.Builder
+	for rows.Next() {
+		var category, key, value string
+		var confidence float64
+		var updatedAt time.Time
+		if err := rows.Scan(&category, &key, &value, &confidence, &updatedAt); err != nil {
+			return "", err
+		}
+		if containsSensitiveCredential(value) {
+			continue
+		}
+		builder.WriteString("- [")
+		builder.WriteString(category)
+		builder.WriteString("] ")
+		builder.WriteString(key)
+		builder.WriteString(": ")
+		builder.WriteString(trimForContext(value, 500))
+		builder.WriteString(" (confidence ")
+		builder.WriteString(strconv.FormatFloat(confidence, 'f', 2, 64))
+		builder.WriteString(", updated ")
+		builder.WriteString(updatedAt.Format(time.RFC3339))
+		builder.WriteString(")\n")
+	}
+	return builder.String(), rows.Err()
+}
+
+func buildChatContext(req chatRequest, personas, notes, snapshots, knowledge string) string {
 	var builder strings.Builder
 	builder.WriteString("当前 Profile ID：")
 	builder.WriteString(strconv.FormatInt(req.ProfileID, 10))
@@ -1587,6 +1675,8 @@ func buildChatContext(req chatRequest, notes, snapshots, knowledge string) strin
 	}
 	builder.WriteString("\n\n当前页面补充文本：\n")
 	builder.WriteString(trimForContext(req.PageText, 12000))
+	builder.WriteString("\n\n当前站点人设库：\n")
+	builder.WriteString(emptyFallback(personas))
 	builder.WriteString("\n\n相关历史笔记：\n")
 	builder.WriteString(emptyFallback(notes))
 	builder.WriteString("\n\n相关历史页面：\n")
@@ -1721,6 +1811,306 @@ func (s *Server) getAIConversation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, row)
+}
+
+type personaRequest struct {
+	ProfileID    int64   `json:"profile_id"`
+	SiteKey      string  `json:"site_key"`
+	Category     string  `json:"category"`
+	PersonaKey   string  `json:"persona_key"`
+	PersonaValue string  `json:"persona_value"`
+	Confidence   float64 `json:"confidence"`
+	SourceType   string  `json:"source_type"`
+	SourceID     *int64  `json:"source_id"`
+}
+
+func (s *Server) createSitePersona(c *gin.Context) {
+	var req personaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		badRequest(c, "invalid JSON body")
+		return
+	}
+	if !preparePersonaRequest(c, &req, true) {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	row, err := scanSitePersona(s.db.QueryRowContext(ctx, `
+		INSERT INTO site_personas (profile_id, site_key, category, persona_key, persona_value, confidence, source_type, source_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (profile_id, site_key, persona_key) DO UPDATE SET
+			category = EXCLUDED.category,
+			persona_value = EXCLUDED.persona_value,
+			confidence = EXCLUDED.confidence,
+			source_type = EXCLUDED.source_type,
+			source_id = EXCLUDED.source_id,
+			updated_at = NOW()
+		RETURNING id, profile_id, site_key, category, persona_key, persona_value, confidence, source_type, source_id, created_at, updated_at
+	`, req.ProfileID, req.SiteKey, req.Category, req.PersonaKey, req.PersonaValue, req.Confidence, req.SourceType, ptrValue(req.SourceID)))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, row)
+}
+
+func (s *Server) listSitePersonas(c *gin.Context) {
+	limit, offset := limitOffset(c)
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, profile_id, site_key, category, persona_key, persona_value, confidence, source_type, source_id, created_at, updated_at
+		FROM site_personas
+		WHERE ($1::bigint IS NULL OR profile_id = $1)
+			AND ($2::text IS NULL OR site_key = $2)
+			AND ($3::text IS NULL OR category = $3)
+		ORDER BY updated_at DESC, id DESC
+		LIMIT $4 OFFSET $5
+	`, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"), optionalStringQuery(c, "category"), limit, offset)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	defer rows.Close()
+
+	items, err := readSitePersonaRows(rows)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (s *Server) sitePersonaContext(c *gin.Context) {
+	profileID, ok := requiredProfileID(c)
+	if !ok {
+		return
+	}
+	siteKey := strings.TrimSpace(c.Query("site_key"))
+	if siteKey == "" {
+		badRequest(c, "site_key is required")
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	contextText, err := s.recentPersonaContext(ctx, profileID, siteKey)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, profile_id, site_key, category, persona_key, persona_value, confidence, source_type, source_id, created_at, updated_at
+		FROM site_personas
+		WHERE profile_id = $1
+			AND site_key = $2
+			AND ($3::text IS NULL OR category = $3)
+		ORDER BY updated_at DESC, id DESC
+		LIMIT 100
+	`, profileID, siteKey, optionalStringQuery(c, "category"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	defer rows.Close()
+
+	items, err := readSitePersonaRows(rows)
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"context": emptyFallback(contextText),
+		"items":   items,
+	})
+}
+
+func (s *Server) updateSitePersona(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req personaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		badRequest(c, "invalid JSON body")
+		return
+	}
+	if !preparePersonaRequest(c, &req, false) {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	row, err := scanSitePersona(s.db.QueryRowContext(ctx, `
+		UPDATE site_personas
+		SET category = $2,
+			persona_key = $3,
+			persona_value = $4,
+			confidence = $5,
+			source_type = $6,
+			source_id = $7,
+			updated_at = NOW()
+		WHERE id = $1
+			AND ($8::bigint IS NULL OR profile_id = $8)
+			AND ($9::text IS NULL OR site_key = $9)
+		RETURNING id, profile_id, site_key, category, persona_key, persona_value, confidence, source_type, source_id, created_at, updated_at
+	`, id, req.Category, req.PersonaKey, req.PersonaValue, req.Confidence, req.SourceType, ptrValue(req.SourceID), optionalInt64Body(req.ProfileID), optionalStringBody(req.SiteKey)))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, row)
+}
+
+func (s *Server) deleteSitePersona(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM site_personas
+		WHERE id = $1
+			AND ($2::bigint IS NULL OR profile_id = $2)
+			AND ($3::text IS NULL OR site_key = $3)
+	`, id, optionalInt64Query(c, "profile_id"), optionalStringQuery(c, "site_key"))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	if rowsAffected == 0 {
+		notFound(c)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func readSitePersonaRows(rows *sql.Rows) ([]models.SitePersona, error) {
+	items := make([]models.SitePersona, 0)
+	for rows.Next() {
+		item, err := scanSitePersona(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func preparePersonaRequest(c *gin.Context, req *personaRequest, requireProfileAndSite bool) bool {
+	req.SiteKey = strings.TrimSpace(req.SiteKey)
+	req.Category = normalizePersonaCategory(req.Category)
+	req.PersonaValue = strings.TrimSpace(req.PersonaValue)
+	req.PersonaKey = normalizePersonaKey(req.PersonaKey)
+	if req.PersonaKey == "" {
+		req.PersonaKey = inferPersonaKey(req.PersonaValue)
+	}
+	req.SourceType = strings.TrimSpace(req.SourceType)
+	if req.SourceType == "" {
+		req.SourceType = "manual"
+	}
+	if req.Confidence <= 0 {
+		req.Confidence = 1
+	}
+	if req.Confidence > 1 {
+		req.Confidence = 1
+	}
+	if requireProfileAndSite && (req.ProfileID <= 0 || req.SiteKey == "") {
+		badRequest(c, "profile_id and site_key are required")
+		return false
+	}
+	if req.PersonaValue == "" {
+		badRequest(c, "persona_value is required")
+		return false
+	}
+	if req.PersonaKey == "" {
+		badRequest(c, "persona_key is required")
+		return false
+	}
+	if containsSensitiveCredential(req.PersonaKey) || containsSensitiveCredential(req.PersonaValue) {
+		badRequest(c, "persona appears to contain credentials, tokens or verification codes")
+		return false
+	}
+	return true
+}
+
+func normalizePersonaCategory(category string) string {
+	category = strings.TrimSpace(category)
+	switch category {
+	case "basic", "demographic", "consumer", "device", "lifestyle", "screening", "preference", "avoid":
+		return category
+	default:
+		return "preference"
+	}
+}
+
+func normalizePersonaKey(key string) string {
+	key = strings.ToLower(strings.TrimSpace(key))
+	key = strings.ReplaceAll(key, "：", ":")
+	if strings.Contains(key, ":") {
+		key = strings.SplitN(key, ":", 2)[0]
+	}
+	key = regexp.MustCompile(`[^a-z0-9_\-]+`).ReplaceAllString(key, "_")
+	key = strings.Trim(key, "_-")
+	if len(key) > 120 {
+		key = key[:120]
+	}
+	return key
+}
+
+func inferPersonaKey(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.Contains(value, ":") || strings.Contains(value, "：") {
+		return normalizePersonaKey(value)
+	}
+	lower := strings.ToLower(value)
+	switch {
+	case strings.Contains(value, "饮料") || strings.Contains(value, "咖啡") || strings.Contains(value, "茶") || strings.Contains(lower, "drink"):
+		return "drink_preference"
+	case strings.Contains(value, "手机") || strings.Contains(value, "电脑") || strings.Contains(lower, "iphone") || strings.Contains(lower, "android") || strings.Contains(lower, "windows") || strings.Contains(lower, "mac"):
+		return "device"
+	case strings.Contains(value, "购物") || strings.Contains(value, "网购") || strings.Contains(lower, "shopping"):
+		return "shopping_preference"
+	case strings.Contains(value, "收入") || strings.Contains(value, "年龄") || strings.Contains(value, "城市") || strings.Contains(value, "学历"):
+		return "demographic_profile"
+	default:
+		hash := 0
+		for _, r := range []rune(value) {
+			hash = (hash*31 + int(r)) % 1000000
+		}
+		return fmt.Sprintf("manual_%06d", hash)
+	}
+}
+
+func optionalInt64Body(value int64) any {
+	if value <= 0 {
+		return nil
+	}
+	return value
+}
+
+func optionalStringBody(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 type knowledgeRequest struct {

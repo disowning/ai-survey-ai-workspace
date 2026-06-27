@@ -14,11 +14,14 @@ import {
   checkHealth,
   chatWithAI,
   createNote,
+  createPersona,
+  deletePersona,
   detectSite,
   ensureSite,
   ensureSurvey,
   listAIConversations,
   listNotes,
+  listPersonas,
   login,
   saveSnapshot,
   searchKnowledge,
@@ -28,7 +31,7 @@ import {
 import type { SystemStatus } from "./api";
 import { extractFromActiveTab, getSelectionFromActiveTab } from "./chromeTabs";
 import { DEFAULT_API_BASE_URL } from "../shared/constants";
-import type { AIConversation, ExtractedPage, KnowledgeChunk, LocalProfile, Note, SiteDetection } from "../shared/types";
+import type { AIConversation, ExtractedPage, KnowledgeChunk, LocalProfile, Note, SiteDetection, SitePersona } from "../shared/types";
 import { getLastSite, getLocalProfile, getSettings, setLastSite, setLocalProfile, setSettings } from "../storage/localProfile";
 
 type Message = {
@@ -66,6 +69,9 @@ const commands: Command[] = [
   { id: "translate-full", icon: "📄", command: "/翻译全文", target: "当前页", detail: "全文译成中文" },
   { id: "translate-selection", icon: "🅰️", command: "/翻译选中", target: "", detail: "翻译划词内容" },
   { id: "note", icon: "📌", command: "/保存笔记", target: "", detail: "写入当前站点", placeholder: "笔记内容" },
+  { id: "persona", icon: "👤", command: "/人设", target: "", detail: "查看站点人设" },
+  { id: "save-persona", icon: "💾", command: "/保存人设", target: "", detail: "写入站点人设", placeholder: "人设内容" },
+  { id: "delete-persona", icon: "🗑️", command: "/删除人设", target: "12", detail: "删除错误人设", placeholder: "人设 ID" },
   { id: "similar", icon: "🔎", command: "/相似题", target: "", detail: "查找相似历史题" },
   { id: "search", icon: "🔍", command: "/搜索知识库", target: "", detail: "查阅过往记录", placeholder: "关键词" },
   { id: "snapshot", icon: "📷", command: "/保存快照", target: "", detail: "记录当前页" },
@@ -324,6 +330,15 @@ export function App() {
       case "/保存笔记":
         await saveNote(args);
         return;
+      case "/人设":
+        await loadPersonas();
+        return;
+      case "/保存人设":
+        await savePersona(args);
+        return;
+      case "/删除人设":
+        await deletePersonaByCommand(args);
+        return;
       case "/搜索知识库":
       case "/搜索历史":
       case "/相似题":
@@ -418,6 +433,46 @@ export function App() {
       note_text: text.trim()
     });
     addMessage({ role: "system", title: "笔记已保存", text: note.note_text, meta: formatDate(note.created_at) });
+  }
+
+  async function loadPersonas() {
+    const { targetProfile, targetSite } = await context();
+    const personas = await listPersonas(trimmedApiBaseUrl, targetProfile.profileId!, targetSite.site_key);
+    addMessage({
+      role: "assistant",
+      title: `站点人设 · ${personas.length} 条`,
+      text: personas.length ? formatPersonas(personas) : "当前站点暂无人设。可以输入 /保存人设 喜欢喝无糖饮料",
+      actions: ["copy", "continue"]
+    });
+  }
+
+  async function savePersona(rawText: string) {
+    const { targetProfile, targetSite } = await context();
+    const parsed = parsePersonaInput(rawText);
+    if (!parsed.value) throw new Error("请输入人设内容，例如 /保存人设 喜欢喝无糖饮料");
+    const persona = await createPersona(trimmedApiBaseUrl, {
+      profile_id: targetProfile.profileId!,
+      site_key: targetSite.site_key,
+      category: parsed.category,
+      persona_key: parsed.key,
+      persona_value: parsed.value,
+      confidence: 1,
+      source_type: "manual"
+    });
+    addMessage({
+      role: "system",
+      title: "人设已保存",
+      text: `[${persona.category}] ${persona.persona_key}: ${persona.persona_value}`,
+      meta: `ID ${persona.id}`
+    });
+  }
+
+  async function deletePersonaByCommand(rawId: string) {
+    const id = Number(rawId.trim());
+    if (!Number.isInteger(id) || id <= 0) throw new Error("请输入正确的人设 ID，例如 /删除人设 12");
+    const { targetProfile, targetSite } = await context();
+    await deletePersona(trimmedApiBaseUrl, id, targetProfile.profileId!, targetSite.site_key);
+    addMessage({ role: "system", title: "人设已删除", text: `已删除 ID ${id}` });
   }
 
   async function searchKB(query: string) {
@@ -891,6 +946,58 @@ function formatConversations(history: AIConversation[]): string {
     .join("\n\n");
 }
 
+function formatPersonas(personas: SitePersona[]): string {
+  return personas
+    .slice(0, 20)
+    .map((item) => `#${item.id} [${personaCategoryLabel(item.category)}] ${item.persona_key}: ${item.persona_value}`)
+    .join("\n");
+}
+
+function parsePersonaInput(rawText: string): { category: string; key: string; value: string } {
+  const value = rawText.trim();
+  if (!value) return { category: "preference", key: "", value: "" };
+  const split = value.match(/^([^:：]{1,40})[:：]\s*(.+)$/);
+  if (split) {
+    return {
+      category: inferPersonaCategory(value),
+      key: normalizePersonaKey(split[1]),
+      value: split[2].trim()
+    };
+  }
+  return {
+    category: inferPersonaCategory(value),
+    key: inferPersonaKey(value),
+    value
+  };
+}
+
+function inferPersonaCategory(value: string): string {
+  const lower = value.toLowerCase();
+  if (/(年龄|收入|城市|学历|婚姻|孩子|性别|age|income|city|education)/i.test(value)) return "demographic";
+  if (/(手机|电脑|设备|iphone|android|windows|mac|browser)/i.test(lower)) return "device";
+  if (/(购买|购物|品牌|饮料|咖啡|茶|消费|网购|drink|shopping|brand)/i.test(lower)) return "consumer";
+  if (/(运动|旅行|做饭|游戏|阅读|生活|hobby|travel|game)/i.test(lower)) return "lifestyle";
+  if (/(筛选|资格|频率|每周|每月|经常|screening|frequency)/i.test(lower)) return "screening";
+  if (/(不要|避免|不保存|禁用|avoid|never)/i.test(lower)) return "avoid";
+  return "preference";
+}
+
+function inferPersonaKey(value: string): string {
+  const lower = value.toLowerCase();
+  if (/(饮料|咖啡|茶|drink)/i.test(lower)) return "drink_preference";
+  if (/(手机|iphone|android)/i.test(lower)) return "phone";
+  if (/(电脑|windows|mac)/i.test(lower)) return "computer";
+  if (/(购物|网购|shopping)/i.test(lower)) return "shopping_frequency";
+  let hash = 0;
+  for (const char of value) hash = (hash * 31 + char.charCodeAt(0)) % 1000000;
+  return `manual_${String(hash).padStart(6, "0")}`;
+}
+
+function normalizePersonaKey(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || inferPersonaKey(value);
+}
+
 function apiStatusLabel(status: ApiStatus): string {
   if (status === "online") return "在线";
   if (status === "ai-missing") return "在线";
@@ -935,6 +1042,18 @@ function sourceTypeLabel(value: string): string {
   if (value === "note") return "笔记";
   if (value === "page_snapshot") return "页面";
   if (value === "ai_conversation") return "AI";
+  return value;
+}
+
+function personaCategoryLabel(value: string): string {
+  if (value === "basic") return "基础";
+  if (value === "demographic") return "人口属性";
+  if (value === "consumer") return "消费";
+  if (value === "device") return "设备";
+  if (value === "lifestyle") return "生活方式";
+  if (value === "screening") return "筛选";
+  if (value === "preference") return "偏好";
+  if (value === "avoid") return "避免";
   return value;
 }
 
