@@ -592,10 +592,9 @@ export function App() {
 
           <div className="compound-input">
             <div className="context-pill">
-              <div>
+              <div title={contextStatusTitle(site, page, profile, systemStatus)}>
                 <span className={`live-dot ${apiStatus}`} />
-                <span>正在解析：{site?.site_name || site?.site_key || page?.domain || "未识别"} {profile.profileName || profile.profileKey || "未绑定"}</span>
-                <em title={systemStatus ? `AI: ${systemStatus.ai_model || "-"} · Embedding: ${systemStatus.ai_embedding_model || "-"}` : undefined}>{apiStatusLabel(apiStatus)}</em>
+                <span>{apiStatusLabel(apiStatus)}</span>
               </div>
               <button type="button" onClick={() => void refreshPageContext(trimmedApiBaseUrl, true)} aria-label="刷新页面上下文">
                 <RefreshCcw size={14} />
@@ -793,6 +792,19 @@ function apiStatusLabel(status: ApiStatus): string {
   if (status === "db-offline") return "数据库异常";
   if (status === "offline") return "API 离线";
   return "检查中";
+}
+
+function contextStatusTitle(
+  site: SiteDetection | null,
+  page: ExtractedPage | null,
+  profile: LocalProfile,
+  systemStatus: SystemStatus | null
+): string {
+  const siteName = site?.site_name || site?.site_key || page?.domain || "未识别";
+  const profileName = profile.profileName || profile.profileKey || "未绑定";
+  const model = systemStatus?.ai_model || "-";
+  const embedding = systemStatus?.ai_embedding_model || "-";
+  return `网站：${siteName}\nProfile：${profileName}\nAI：${model}\nEmbedding：${embedding}`;
 }
 
 function formatDate(value: string): string {

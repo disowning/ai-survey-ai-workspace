@@ -365,7 +365,7 @@ button {
   width: max-content;
   max-width: 100%;
   margin-bottom: 12px;
-  padding: 6px 8px 6px 12px;
+  padding: 6px 7px 6px 10px;
   color: #444746;
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.04);
@@ -377,10 +377,11 @@ button {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 8px;
+  gap: 7px;
 }
 
 .context-pill span:last-child {
+  max-width: 86px;
   overflow: hidden;
   font-size: 13px;
   font-weight: 550;
@@ -422,7 +423,7 @@ button {
   flex: 0 0 auto;
   width: 22px;
   height: 22px;
-  margin-left: 12px;
+  margin-left: 4px;
   place-items: center;
   color: #444746;
   background: transparent;
