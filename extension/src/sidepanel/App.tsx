@@ -150,6 +150,7 @@ export function App() {
   }, [showCommands, input]);
 
   function addMessage(message: Omit<Message, "id">) {
+    if (message.role === "system" && !isImportantSystemMessage(message.text)) return;
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setMessages((current) => [...current, { id, ...message }].slice(-40));
   }
@@ -769,6 +770,11 @@ function filterCommands(input: string): Command[] {
   const query = input.trim().replace(/^\//, "").toLowerCase();
   if (!query) return commands;
   return commands.filter((item) => `${item.command} ${item.target} ${item.detail}`.toLowerCase().includes(query));
+}
+
+function isImportantSystemMessage(text: string): boolean {
+  const value = text.toLowerCase();
+  return value.includes("error") || value.includes("fail") || value.includes("failed") || value.includes("失败") || value.includes("异常");
 }
 
 function formatKnowledge(results: KnowledgeChunk[]): string {
