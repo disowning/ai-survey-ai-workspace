@@ -62,18 +62,26 @@ const suggestionPills = [
 ];
 
 const commands: Command[] = [
-  { id: "summary", icon: "📝", command: "/总结", target: "当前页面", detail: "生成页面摘要" },
+  { id: "translate", icon: "🌐", command: "/翻译", target: "当前题目/选中", detail: "自动翻译最相关内容" },
   { id: "explain", icon: "💡", command: "/解释", target: "当前题目", detail: "说明题意和选项" },
-  { id: "choose", icon: "✨", command: "/帮我选择", target: "基于真实情况", detail: "辅助判断选项" },
-  { id: "translate-page", icon: "🌐", command: "/翻译", target: "当前题目", detail: "题目和选项译成中文" },
+  { id: "choose", icon: "✨", command: "/选择", target: "基于人设库", detail: "辅助判断选项" },
+  { id: "note", icon: "📌", command: "/笔记", target: "", detail: "保存当前站点笔记", placeholder: "笔记内容" },
+  { id: "persona", icon: "👤", command: "/人设", target: "", detail: "查看或保存站点人设" },
+  { id: "history", icon: "🔎", command: "/历史", target: "", detail: "搜索相似题和记录", placeholder: "关键词" },
+  { id: "settings", icon: "⚙️", command: "/设置", target: "", detail: "绑定和连接设置" }
+];
+
+const hiddenCommandAliases: Command[] = [
+  { id: "summary", icon: "📝", command: "/总结", target: "当前页面", detail: "生成页面摘要" },
+  { id: "choose-legacy", icon: "✨", command: "/帮我选择", target: "基于真实情况", detail: "辅助判断选项" },
   { id: "translate-full", icon: "📄", command: "/翻译全文", target: "当前页", detail: "全文译成中文" },
   { id: "translate-selection", icon: "🅰️", command: "/翻译选中", target: "", detail: "翻译划词内容" },
-  { id: "note", icon: "📌", command: "/保存笔记", target: "", detail: "写入当前站点", placeholder: "笔记内容" },
-  { id: "persona", icon: "👤", command: "/人设", target: "", detail: "查看站点人设" },
+  { id: "note-legacy", icon: "📌", command: "/保存笔记", target: "", detail: "写入当前站点", placeholder: "笔记内容" },
   { id: "save-persona", icon: "💾", command: "/保存人设", target: "", detail: "写入站点人设", placeholder: "人设内容" },
   { id: "delete-persona", icon: "🗑️", command: "/删除人设", target: "12", detail: "删除错误人设", placeholder: "人设 ID" },
   { id: "similar", icon: "🔎", command: "/相似题", target: "", detail: "查找相似历史题" },
   { id: "search", icon: "🔍", command: "/搜索知识库", target: "", detail: "查阅过往记录", placeholder: "关键词" },
+  { id: "search-history", icon: "🔍", command: "/搜索历史", target: "", detail: "查阅过往记录", placeholder: "关键词" },
   { id: "snapshot", icon: "📷", command: "/保存快照", target: "", detail: "记录当前页" },
   { id: "notes", icon: "📚", command: "/历史笔记", target: "", detail: "查看站点笔记" },
   { id: "chats", icon: "💬", command: "/历史对话", target: "", detail: "查看 AI 对话" },
@@ -315,11 +323,12 @@ export function App() {
       case "/解释":
         await askAI("请解释当前题目和选项含义：题目意思、每个选项含义、容易误解的词、是否像筛选题。不要编造用户资料。", "解释");
         return;
+      case "/选择":
       case "/帮我选择":
         await askAI("请基于我已经提供的真实情况、历史笔记和当前页面，帮我判断更合适的选项。先解释题目和选项；如果缺少真实信息，请明确说需要我补充；如果可以建议，请给出“建议选择”和理由，并提醒我最终确认。不要编造身份或经历，不要自动提交。", "辅助选择");
         return;
       case "/翻译":
-        await translatePage();
+        await translateSmart();
         return;
       case "/翻译全文":
         await translateFullPage();
@@ -327,11 +336,16 @@ export function App() {
       case "/翻译选中":
         await translateSelection();
         return;
+      case "/笔记":
       case "/保存笔记":
         await saveNote(args);
         return;
       case "/人设":
-        await loadPersonas();
+        if (args) {
+          await savePersona(args);
+        } else {
+          await loadPersonas();
+        }
         return;
       case "/保存人设":
         await savePersona(args);
@@ -339,6 +353,7 @@ export function App() {
       case "/删除人设":
         await deletePersonaByCommand(args);
         return;
+      case "/历史":
       case "/搜索知识库":
       case "/搜索历史":
       case "/相似题":
@@ -352,6 +367,10 @@ export function App() {
         return;
       case "/历史对话":
         await loadChats();
+        return;
+      case "/设置":
+        setSettingsOpen(true);
+        textareaRef.current?.blur();
         return;
       default:
         throw new Error("未知命令。输入 / 查看可用命令");
@@ -394,6 +413,23 @@ export function App() {
       target_lang: "zh-CN"
     });
     addMessage({ role: "assistant", title: "翻译", text: translated.translated_text, meta: "已保存翻译记录", actions: ["save-note", "copy", "continue"] });
+  }
+
+  async function translateSmart() {
+    const selectedText = await getSelectionFromActiveTab();
+    if (!selectedText) {
+      await translatePage();
+      return;
+    }
+    const { targetProfile, targetPage, targetSite } = await context();
+    const translated = await translateText(trimmedApiBaseUrl, {
+      profile_id: targetProfile.profileId!,
+      site_key: targetSite.site_key,
+      source_text: selectedText,
+      source_lang: targetPage.language,
+      target_lang: "zh-CN"
+    });
+    addMessage({ role: "assistant", title: "翻译选中", text: translated.translated_text, meta: "已保存翻译记录", actions: ["save-note", "copy", "continue"] });
   }
 
   async function translateFullPage() {
@@ -904,7 +940,7 @@ function CommandMenu({
 
 function parseCommand(raw: string): { command: string; args: string } {
   const value = raw.trim();
-  const matched = [...commands].sort((a, b) => b.command.length - a.command.length).find((item) => {
+  const matched = [...commands, ...hiddenCommandAliases].sort((a, b) => b.command.length - a.command.length).find((item) => {
     return value === item.command || value.startsWith(`${item.command} `);
   });
   if (!matched) {
