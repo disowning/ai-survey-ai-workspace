@@ -381,7 +381,7 @@ button {
 }
 
 .context-pill span:last-child {
-  max-width: 86px;
+  max-width: 54px;
   overflow: hidden;
   font-size: 13px;
   font-weight: 550;
@@ -663,6 +663,17 @@ button {
   border: 1px solid #e8ecef;
   border-radius: 12px;
   outline: 0;
+}
+
+.settings-link-button {
+  align-self: flex-start;
+  height: 28px !important;
+  padding: 0 10px;
+  color: #444746 !important;
+  background: #f0f4f9 !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
 }
 
 .settings-panel button {

@@ -98,6 +98,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [scopeMode, setScopeMode] = useState<ScopeMode>("auto");
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
@@ -642,10 +643,15 @@ export function App() {
               <strong>连接设置</strong>
               <span>只在这里处理绑定，不占主界面</span>
             </div>
-            <label>
-              API
-              <input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} />
-            </label>
+            <button className="settings-link-button" type="button" onClick={() => setShowAdvancedSettings((value) => !value)}>
+              {showAdvancedSettings ? "隐藏 API 设置" : "显示 API 设置"}
+            </button>
+            {showAdvancedSettings ? (
+              <label>
+                API
+                <input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} />
+              </label>
+            ) : null}
             <label>
               Username
               <input value={usernameDraft} autoComplete="username" onChange={(event) => setUsernameDraft(event.target.value)} />
@@ -787,10 +793,10 @@ function formatConversations(history: AIConversation[]): string {
 }
 
 function apiStatusLabel(status: ApiStatus): string {
-  if (status === "online") return "API 在线";
-  if (status === "ai-missing") return "AI 未配置";
-  if (status === "db-offline") return "数据库异常";
-  if (status === "offline") return "API 离线";
+  if (status === "online") return "在线";
+  if (status === "ai-missing") return "在线";
+  if (status === "db-offline") return "异常";
+  if (status === "offline") return "离线";
   return "检查中";
 }
 
