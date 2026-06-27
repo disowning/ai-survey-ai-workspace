@@ -51,6 +51,7 @@ export function App() {
   const active = useMemo(() => resources.find((item) => item.key === activeKey) ?? resources[0], [activeKey]);
   const trimmedApiBaseUrl = apiBaseUrl.replace(/\/+$/, "");
   const visibleRows = useMemo(() => rows.filter((row) => rowMatchesQuery(row, query)), [rows, query]);
+  const tableColumns = useMemo(() => columnsForResource(active), [active]);
 
   useEffect(() => {
     const savedApiBaseUrl = localStorage.getItem(storageKeys.apiBaseUrl);
@@ -292,17 +293,19 @@ export function App() {
             <table>
               <thead>
                 <tr>
-                  {active.columns.map((column) => (
-                    <th key={column}>{column}</th>
+                  {tableColumns.map((column) => (
+                    <th key={column}>{columnLabel(column)}</th>
                   ))}
-                  {active.key === "knowledge" ? <th>action</th> : null}
+                  {active.key === "knowledge" ? <th>操作</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.map((row) => (
                   <tr key={String(row.id ?? JSON.stringify(row))} className={selected === row ? "selected" : ""} onClick={() => setSelected(row)}>
-                    {active.columns.map((column) => (
-                      <td key={column}>{formatCell(row[column])}</td>
+                    {tableColumns.map((column) => (
+                      <td key={column} className={`column-${column.replace(/_/g, "-")}`}>
+                        {active.key === "knowledge" ? formatKnowledgeCell(column, row[column], row) : formatCell(row[column])}
+                      </td>
                     ))}
                     {active.key === "knowledge" ? (
                       <td>
@@ -315,7 +318,7 @@ export function App() {
                 ))}
                 {!visibleRows.length ? (
                   <tr>
-                    <td colSpan={active.columns.length + (active.key === "knowledge" ? 1 : 0)} className="empty">
+                    <td colSpan={tableColumns.length + (active.key === "knowledge" ? 1 : 0)} className="empty">
                       暂无数据
                     </td>
                   </tr>
@@ -338,15 +341,21 @@ export function App() {
                     {copied ? "已复制" : "复制 JSON"}
                   </button>
                 </div>
-                <dl className="detail-list">
-                  {Object.entries(selected).map(([key, value]) => (
-                    <div key={key}>
-                      <dt>{key}</dt>
-                      <dd>{formatDetail(value)}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <pre>{JSON.stringify(selected, null, 2)}</pre>
+                {active.key === "knowledge" ? (
+                  <KnowledgeDetail row={selected} />
+                ) : (
+                  <>
+                    <dl className="detail-list">
+                      {Object.entries(selected).map(([key, value]) => (
+                        <div key={key}>
+                          <dt>{columnLabel(key)}</dt>
+                          <dd>{formatDetail(value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <pre>{JSON.stringify(selected, null, 2)}</pre>
+                  </>
+                )}
               </>
             ) : (
               <pre>未选择记录</pre>
@@ -380,6 +389,36 @@ function iconForResource(key: ResourceKey) {
     default:
       return <Database {...props} />;
   }
+}
+
+function KnowledgeDetail({ row }: { row: AnyRecord }) {
+  return (
+    <div className="knowledge-detail">
+      <section className="knowledge-content">
+        <span>知识内容</span>
+        <p>{cleanKnowledgeText(String(row.chunk_text ?? "")) || "-"}</p>
+      </section>
+
+      <div className="knowledge-meta-grid">
+        <MetaItem label="Profile" value={formatCell(row.profile_id)} />
+        <MetaItem label="网站" value={formatCell(row.site_key)} />
+        <MetaItem label="问卷" value={formatCell(row.survey_id) || "-"} />
+        <MetaItem label="范围" value={scopeLabel(row.scope)} />
+        <MetaItem label="来源" value={sourceTypeLabel(row.source_type)} />
+        <MetaItem label="来源 ID" value={formatCell(row.source_id) || "-"} />
+        <MetaItem label="创建时间" value={formatDateTime(row.created_at)} />
+      </div>
+    </div>
+  );
+}
+
+function MetaItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
 }
 
 function FilterBar({
@@ -464,6 +503,89 @@ function rowMatchesQuery(row: AnyRecord, query: string): boolean {
   const value = query.trim().toLowerCase();
   if (!value) return true;
   return JSON.stringify(row).toLowerCase().includes(value);
+}
+
+function columnsForResource(active: ResourceConfig): string[] {
+  if (active.key !== "knowledge") return active.columns;
+  return ["id", "profile_id", "site_key", "scope", "source_type", "chunk_text", "created_at"];
+}
+
+function columnLabel(column: string): string {
+  const labels: Record<string, string> = {
+    id: "ID",
+    profile_id: "Profile",
+    profile_key: "Profile Key",
+    profile_name: "Profile 名称",
+    site_key: "网站",
+    site_name: "网站名称",
+    survey_id: "问卷",
+    survey_title: "问卷标题",
+    scope: "范围",
+    source_type: "来源",
+    source_id: "来源 ID",
+    chunk_text: "内容",
+    note_text: "笔记",
+    user_message: "用户问题",
+    ai_message: "AI 回复",
+    translated_text: "译文",
+    created_at: "时间",
+    status: "状态",
+    remark: "备注"
+  };
+  return labels[column] ?? column;
+}
+
+function formatKnowledgeCell(column: string, value: unknown, row: AnyRecord): string {
+  if (column === "chunk_text") return previewText(cleanKnowledgeText(String(value ?? "")), 180);
+  if (column === "scope") return scopeLabel(value);
+  if (column === "source_type") return sourceTypeLabel(value);
+  if (column === "created_at") return formatDateTime(value);
+  if (column === "profile_id") return value ? `Profile ${String(value)}` : "-";
+  if (column === "site_key") return String(value || row.site_name || "-");
+  return formatCell(value);
+}
+
+function cleanKnowledgeText(value: string): string {
+  return value
+    .replace(/^User:\s*/i, "用户：")
+    .replace(/\sAI:\s*/i, "\n\nAI：")
+    .trim();
+}
+
+function previewText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "-";
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+}
+
+function scopeLabel(value: unknown): string {
+  const key = String(value ?? "");
+  if (key === "survey") return "问卷";
+  if (key === "site") return "网站";
+  if (key === "profile") return "Profile";
+  if (key === "team") return "团队";
+  return key || "-";
+}
+
+function sourceTypeLabel(value: unknown): string {
+  const key = String(value ?? "");
+  if (key === "ai_conversation") return "AI 对话";
+  if (key === "note") return "笔记";
+  if (key === "page_snapshot") return "页面快照";
+  if (key === "manual") return "手动录入";
+  return key || "-";
+}
+
+function formatDateTime(value: unknown): string {
+  if (!value) return "-";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function formatCell(value: unknown): string {
