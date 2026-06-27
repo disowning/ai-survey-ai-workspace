@@ -25,7 +25,7 @@ import { deleteKnowledge, downloadExport, listResource, login, setAuthToken } fr
 import { resources } from "./resources";
 import type { AnyRecord, ResourceConfig, ResourceKey } from "./types";
 
-const defaultApiBaseUrl = "http://localhost:8080";
+const defaultApiBaseUrl = inferDefaultApiBaseUrl();
 const storageKeys = {
   apiBaseUrl: "surveyAiAdmin.apiBaseUrl",
   authToken: "surveyAiAdmin.authToken",
@@ -453,4 +453,13 @@ function exportFilename(path: string): string {
   if (path.includes("notes.csv")) return "survey-notes.csv";
   if (path.includes("daily-report")) return "survey-daily-report.md";
   return "survey-export.md";
+}
+
+function inferDefaultApiBaseUrl(): string {
+  if (typeof window === "undefined") return "http://localhost:8080";
+  const { protocol, hostname } = window.location;
+  if (hostname.includes("-admin.")) return `${protocol}//${hostname.replace("-admin.", "-api.")}`;
+  if (hostname.startsWith("admin.")) return `${protocol}//api.${hostname.slice("admin.".length)}`;
+  if (hostname === "localhost" || hostname === "127.0.0.1") return "http://localhost:8080";
+  return `${protocol}//${hostname}`;
 }
