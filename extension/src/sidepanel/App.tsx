@@ -617,6 +617,7 @@ export function App() {
               {messages.map((message) => (
                 <MessageBubble key={message.id} message={message} onAction={handleMessageAction} />
               ))}
+              {busy ? <ThinkingIndicator /> : null}
               <div ref={messagesEndRef} className="message-end" />
             </section>
           )}
@@ -632,12 +633,14 @@ export function App() {
             />
           )}
 
-          <div className="compound-input">
+          <div className={`compound-input ${busy ? "is-busy" : ""}`}>
+            {busy ? <div className="input-progress" aria-hidden="true" /> : null}
             <div className="context-pill">
               <div title={contextStatusTitle(site, page, profile, systemStatus)}>
                 <span className={`live-dot ${apiStatus}`} />
                 <span>{apiStatusLabel(apiStatus)}</span>
                 <em>{pageStatusLabel(page)}</em>
+                {busy ? <em>处理中</em> : null}
               </div>
               <button type="button" onClick={() => void refreshPageContext(trimmedApiBaseUrl, true)} aria-label="刷新页面上下文">
                 <RefreshCcw size={14} />
@@ -754,6 +757,25 @@ function MessageBubble({
           <button type="button" title="继续" onClick={() => void onAction("continue", message)}>
             <RefreshCcw size={16} />
           </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ThinkingIndicator() {
+  return (
+    <article className="message-row ai-row thinking-row" aria-live="polite">
+      <div className="ai-avatar">
+        <Sparkles size={20} />
+      </div>
+      <div className="ai-body thinking-body">
+        <strong>正在处理</strong>
+        <div className="thinking-card">
+          <span>AI 正在读取当前页面和历史记录</span>
+          <div className="thinking-progress">
+            <i />
+          </div>
         </div>
       </div>
     </article>

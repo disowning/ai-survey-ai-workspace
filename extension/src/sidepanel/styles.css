@@ -310,6 +310,49 @@ button {
   background: #f0f4f9;
 }
 
+.thinking-row {
+  opacity: 0.98;
+}
+
+.thinking-body strong {
+  color: #3c4043;
+}
+
+.thinking-card {
+  max-width: 360px;
+  padding: 12px 14px;
+  background: #f0f4f9;
+  border: 1px solid #e8ecef;
+  border-radius: 18px;
+}
+
+.thinking-card span {
+  display: block;
+  color: #5f6368;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.thinking-progress {
+  position: relative;
+  height: 3px;
+  margin-top: 10px;
+  overflow: hidden;
+  background: rgba(26, 115, 232, 0.12);
+  border-radius: 999px;
+}
+
+.thinking-progress i,
+.input-progress::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  content: "";
+  background: linear-gradient(90deg, rgba(26, 115, 232, 0), #1a73e8, rgba(147, 51, 234, 0.75), rgba(26, 115, 232, 0));
+  border-radius: inherit;
+  animation: progress-slide 1.18s ease-in-out infinite;
+}
+
 .message-end {
   height: 8px;
 }
@@ -336,10 +379,26 @@ button {
   transition: box-shadow 0.18s ease;
   width: min(100%, 640px);
   margin: 0 auto;
+  overflow: hidden;
 }
 
 .compound-input:focus-within {
   box-shadow: 0 3px 14px rgba(0, 0, 0, 0.06);
+}
+
+.compound-input.is-busy {
+  box-shadow: 0 4px 18px rgba(26, 115, 232, 0.08);
+}
+
+.input-progress {
+  position: absolute;
+  top: 0;
+  right: 18px;
+  left: 18px;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(26, 115, 232, 0.08);
+  border-radius: 0 0 999px 999px;
 }
 
 .context-pill {
@@ -516,6 +575,20 @@ button {
   box-shadow: none;
   cursor: not-allowed;
   transform: scale(0.95);
+}
+
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-115%);
+  }
+
+  55% {
+    transform: translateX(95%);
+  }
+
+  100% {
+    transform: translateX(235%);
+  }
 }
 
 .command-menu {
