@@ -5,6 +5,7 @@ import type {
   Note,
   SiteDetection,
   SnapshotPayload,
+  Survey,
   Translation
 } from "../shared/types";
 
@@ -120,6 +121,23 @@ export async function ensureSite(apiBaseUrl: string, site: SiteDetection): Promi
   }
 
   throw new Error(await readError(response, "保存网站记录失败"));
+}
+
+export async function ensureSurvey(
+  apiBaseUrl: string,
+  payload: { profile_id: number; site_key: string; survey_title?: string; survey_url?: string }
+): Promise<Survey> {
+  const response = await fetch(`${apiBaseUrl}/api/survey-sessions/ensure`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response, "创建问卷会话失败"));
+  }
+
+  return (await response.json()) as Survey;
 }
 
 export async function saveSnapshot(apiBaseUrl: string, payload: SnapshotPayload): Promise<void> {

@@ -775,6 +775,59 @@ func (s *Server) createSurvey(c *gin.Context) {
 	c.JSON(http.StatusCreated, row)
 }
 
+func (s *Server) ensureSurvey(c *gin.Context) {
+	var req surveyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		badRequest(c, "invalid JSON body")
+		return
+	}
+	req.SiteKey = strings.TrimSpace(req.SiteKey)
+	if req.ProfileID <= 0 || req.SiteKey == "" {
+		badRequest(c, "profile_id and site_key are required")
+		return
+	}
+	title := strings.TrimSpace(ptrValueString(req.SurveyTitle))
+	surveyURL := strings.TrimSpace(ptrValueString(req.SurveyURL))
+	if title == "" {
+		title = "临时问卷"
+	}
+
+	ctx, cancel := requestContext(c)
+	defer cancel()
+
+	if surveyURL != "" {
+		row, err := scanSurvey(s.db.QueryRowContext(ctx, `
+			SELECT id, profile_id, site_key, survey_title, survey_url, status, created_at, updated_at
+			FROM surveys
+			WHERE profile_id = $1
+				AND site_key = $2
+				AND survey_url = $3
+				AND status = 'active'
+			ORDER BY id DESC
+			LIMIT 1
+		`, req.ProfileID, req.SiteKey, surveyURL))
+		if err == nil {
+			c.JSON(http.StatusOK, row)
+			return
+		}
+		if err != sql.ErrNoRows {
+			handleDBError(c, err)
+			return
+		}
+	}
+
+	row, err := scanSurvey(s.db.QueryRowContext(ctx, `
+		INSERT INTO surveys (profile_id, site_key, survey_title, survey_url)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, profile_id, site_key, survey_title, survey_url, status, created_at, updated_at
+	`, req.ProfileID, req.SiteKey, title, nullIfEmpty(surveyURL)))
+	if err != nil {
+		handleDBError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, row)
+}
+
 func (s *Server) listSurveys(c *gin.Context) {
 	limit, offset := limitOffset(c)
 	ctx, cancel := requestContext(c)
@@ -1550,6 +1603,14 @@ func ptrValueString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func nullIfEmpty(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func emptyFallback(value string) string {

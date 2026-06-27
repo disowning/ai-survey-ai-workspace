@@ -16,6 +16,7 @@ import {
   createNote,
   detectSite,
   ensureSite,
+  ensureSurvey,
   listAIConversations,
   listNotes,
   login,
@@ -93,6 +94,7 @@ export function App() {
   const [site, setSite] = useState<SiteDetection | null>(null);
   const [page, setPage] = useState<ExtractedPage | null>(null);
   const [surveyId, setSurveyId] = useState("");
+  const [autoSurveyId, setAutoSurveyId] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(false);
@@ -110,6 +112,7 @@ export function App() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const autoSnapshotKeysRef = useRef<Set<string>>(new Set());
+  const autoSurveyRef = useRef<{ key: string; id: number } | null>(null);
 
   const trimmedApiBaseUrl = useMemo(() => apiBaseUrl.replace(/\/+$/, ""), [apiBaseUrl]);
   const showCommands = input.trimStart().startsWith("/");
@@ -234,17 +237,43 @@ export function App() {
     return persisted;
   }
 
-  function currentSurveyId(): number | undefined {
+  function manualSurveyId(): number | undefined {
     if (!surveyId.trim()) return undefined;
     const parsed = Number(surveyId);
     if (!Number.isInteger(parsed) || parsed <= 0) throw new Error("问卷 ID 必须是正整数");
     return parsed;
   }
 
+  async function ensureCurrentSurveyId(
+    targetProfile: LocalProfile,
+    targetPage: ExtractedPage,
+    targetSite: SiteDetection,
+    baseUrl = trimmedApiBaseUrl
+  ): Promise<number | undefined> {
+    const manual = manualSurveyId();
+    if (manual) return manual;
+    if (!targetProfile.profileId || !targetPage.questionText) return autoSurveyId ?? undefined;
+
+    const sessionUrl = surveySessionUrl(targetPage.url);
+    const key = `${targetProfile.profileId}:${targetSite.site_key}:${sessionUrl}`;
+    if (autoSurveyRef.current?.key === key) return autoSurveyRef.current.id;
+
+    const survey = await ensureSurvey(baseUrl, {
+      profile_id: targetProfile.profileId,
+      site_key: targetSite.site_key,
+      survey_title: surveySessionTitle(targetPage, targetSite),
+      survey_url: sessionUrl
+    });
+    autoSurveyRef.current = { key, id: survey.id };
+    setAutoSurveyId(survey.id);
+    return survey.id;
+  }
+
   async function context() {
     const [targetProfile, targetPage] = await Promise.all([ensureProfile(), ensurePage()]);
     const targetSite = await ensureCurrentSite(targetPage);
-    return { targetProfile, targetPage, targetSite, targetSurveyId: currentSurveyId() };
+    const targetSurveyId = await ensureCurrentSurveyId(targetProfile, targetPage, targetSite);
+    return { targetProfile, targetPage, targetSite, targetSurveyId };
   }
 
   async function submitInput() {
@@ -428,10 +457,11 @@ export function App() {
 
     try {
       const persistedSite = await ensureSite(baseUrl, targetSite);
+      const targetSurveyId = await ensureCurrentSurveyId(profile, targetPage, persistedSite, baseUrl);
       await saveSnapshot(baseUrl, {
         profile_id: profile.profileId,
         site_key: persistedSite.site_key,
-        survey_id: currentSurveyId(),
+        survey_id: targetSurveyId,
         url: targetPage.url,
         page_title: targetPage.title,
         question_text: targetPage.questionText,
@@ -711,7 +741,7 @@ export function App() {
             </label>
             <label>
               Survey ID
-              <input value={surveyId} placeholder="可选" inputMode="numeric" onChange={(event) => setSurveyId(event.target.value)} />
+              <input value={surveyId} placeholder={autoSurveyId ? `自动 #${autoSurveyId}` : "可选"} inputMode="numeric" onChange={(event) => setSurveyId(event.target.value)} />
             </label>
             <button type="button" onClick={() => void saveSettings()} disabled={busy}>
               保存
@@ -884,6 +914,21 @@ function surveyQuestionText(page: ExtractedPage): string {
     page.optionsText ? `选项：${page.optionsText}` : ""
   ].filter(Boolean);
   return parts.join("\n") || page.pageText;
+}
+
+function surveySessionUrl(pageUrl: string): string {
+  try {
+    const url = new URL(pageUrl);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return pageUrl.split("?")[0] || pageUrl;
+  }
+}
+
+function surveySessionTitle(page: ExtractedPage, site: SiteDetection): string {
+  const siteName = site.site_name || site.site_key || page.domain;
+  const title = page.questionText || page.title || "临时问卷";
+  return `${siteName} · ${title.slice(0, 80)}`;
 }
 
 function sourceTypeLabel(value: string): string {

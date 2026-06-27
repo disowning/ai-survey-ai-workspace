@@ -54,6 +54,7 @@ func New(db *sql.DB, aiClient *ai.Client, auth AuthConfig) *gin.Engine {
 			protected.GET("/profile-sites/:id", s.getProfileSite)
 			protected.PUT("/profile-sites/:id", s.updateProfileSite)
 
+			protected.POST("/survey-sessions/ensure", s.ensureSurvey)
 			protected.POST("/surveys", s.createSurvey)
 			protected.GET("/surveys", s.listSurveys)
 			protected.GET("/surveys/:id", s.getSurvey)

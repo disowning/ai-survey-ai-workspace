@@ -28,6 +28,17 @@ export type LocalProfile = {
   profileName: string;
 };
 
+export type Survey = {
+  id: number;
+  profile_id: number;
+  site_key: string;
+  survey_title?: string;
+  survey_url?: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ExtensionSettings = {
   apiBaseUrl: string;
   authToken?: string;
