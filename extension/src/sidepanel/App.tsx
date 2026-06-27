@@ -54,15 +54,18 @@ type ApiStatus = "checking" | "online" | "ai-missing" | "db-offline" | "offline"
 const suggestionPills = [
   { id: "summary", text: "总结当前问卷页面？", command: "/总结" },
   { id: "explain", text: "这道题目的核心考点是什么？", command: "/解释" },
-  { id: "translate", text: "帮我把当前页面翻译成中文", command: "/翻译" }
+  { id: "translate", text: "翻译当前题目和选项", command: "/翻译" }
 ];
 
 const commands: Command[] = [
   { id: "summary", icon: "📝", command: "/总结", target: "当前页面", detail: "生成页面摘要" },
   { id: "explain", icon: "💡", command: "/解释", target: "当前题目", detail: "说明题意和选项" },
-  { id: "translate-page", icon: "🌐", command: "/翻译", target: "当前页", detail: "全文译成中文" },
+  { id: "choose", icon: "✨", command: "/帮我选择", target: "基于真实情况", detail: "辅助判断选项" },
+  { id: "translate-page", icon: "🌐", command: "/翻译", target: "当前题目", detail: "题目和选项译成中文" },
+  { id: "translate-full", icon: "📄", command: "/翻译全文", target: "当前页", detail: "全文译成中文" },
   { id: "translate-selection", icon: "🅰️", command: "/翻译选中", target: "", detail: "翻译划词内容" },
   { id: "note", icon: "📌", command: "/保存笔记", target: "", detail: "写入当前站点", placeholder: "笔记内容" },
+  { id: "similar", icon: "🔎", command: "/相似题", target: "", detail: "查找相似历史题" },
   { id: "search", icon: "🔍", command: "/搜索知识库", target: "", detail: "查阅过往记录", placeholder: "关键词" },
   { id: "snapshot", icon: "📷", command: "/保存快照", target: "", detail: "记录当前页" },
   { id: "notes", icon: "📚", command: "/历史笔记", target: "", detail: "查看站点笔记" },
@@ -106,6 +109,7 @@ export function App() {
   const [authToken, setAuthTokenState] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const autoSnapshotKeysRef = useRef<Set<string>>(new Set());
 
   const trimmedApiBaseUrl = useMemo(() => apiBaseUrl.replace(/\/+$/, ""), [apiBaseUrl]);
   const showCommands = input.trimStart().startsWith("/");
@@ -194,6 +198,7 @@ export function App() {
       const detected = await detectSite(baseUrl, extracted.url);
       setSite(detected.site);
       await setLastSite(detected.site);
+      void autoSaveQuestionSnapshot(baseUrl, extracted, detected.site);
       if (notify) {
         addMessage({
           role: "system",
@@ -270,13 +275,19 @@ export function App() {
         addMessage({ role: "system", title: "已设置问卷", text: `当前问卷 ID：${args}` });
         return;
       case "/总结":
-        await askAI("请总结当前问卷页面，只基于页面内容和历史记录，不要替用户作答。", "总结");
+        await askAI("请总结当前问卷页面：页面在问什么、有哪些题目/选项、需要注意哪些条件。不要自动提交，不要编造用户资料。", "总结");
         return;
       case "/解释":
-        await askAI("请解释当前题目和选项含义，只做理解辅助，不要给出代答答案。", "解释");
+        await askAI("请解释当前题目和选项含义：题目意思、每个选项含义、容易误解的词、是否像筛选题。不要编造用户资料。", "解释");
+        return;
+      case "/帮我选择":
+        await askAI("请基于我已经提供的真实情况、历史笔记和当前页面，帮我判断更合适的选项。先解释题目和选项；如果缺少真实信息，请明确说需要我补充；如果可以建议，请给出“建议选择”和理由，并提醒我最终确认。不要编造身份或经历，不要自动提交。", "辅助选择");
         return;
       case "/翻译":
         await translatePage();
+        return;
+      case "/翻译全文":
+        await translateFullPage();
         return;
       case "/翻译选中":
         await translateSelection();
@@ -286,6 +297,7 @@ export function App() {
         return;
       case "/搜索知识库":
       case "/搜索历史":
+      case "/相似题":
         await searchKB(args);
         return;
       case "/保存快照":
@@ -312,6 +324,10 @@ export function App() {
       page_text: targetPage.pageText,
       question_text: targetPage.questionText,
       options_text: targetPage.optionsText,
+      progress_text: targetPage.progressText,
+      question_type: targetPage.questionType,
+      extraction_confidence: targetPage.extractionConfidence,
+      extracted_blocks: targetPage.extractedBlocks,
       user_message: userMessage
     });
     addMessage({
@@ -325,14 +341,27 @@ export function App() {
 
   async function translatePage() {
     const { targetProfile, targetPage, targetSite } = await context();
+    const sourceText = surveyQuestionText(targetPage);
     const translated = await translateText(trimmedApiBaseUrl, {
       profile_id: targetProfile.profileId!,
       site_key: targetSite.site_key,
-      source_text: targetPage.questionText || targetPage.pageText,
+      source_text: sourceText,
       source_lang: targetPage.language,
       target_lang: "zh-CN"
     });
     addMessage({ role: "assistant", title: "翻译", text: translated.translated_text, meta: "已保存翻译记录", actions: ["save-note", "copy", "continue"] });
+  }
+
+  async function translateFullPage() {
+    const { targetProfile, targetPage, targetSite } = await context();
+    const translated = await translateText(trimmedApiBaseUrl, {
+      profile_id: targetProfile.profileId!,
+      site_key: targetSite.site_key,
+      source_text: targetPage.pageText,
+      source_lang: targetPage.language,
+      target_lang: "zh-CN"
+    });
+    addMessage({ role: "assistant", title: "翻译全文", text: translated.translated_text, meta: "已保存翻译记录", actions: ["save-note", "copy", "continue"] });
   }
 
   async function translateSelection() {
@@ -389,6 +418,30 @@ export function App() {
       language: targetPage.language
     });
     addMessage({ role: "system", title: "快照已保存", text: targetPage.title, meta: targetSite.site_key });
+  }
+
+  async function autoSaveQuestionSnapshot(baseUrl: string, targetPage: ExtractedPage, targetSite: SiteDetection) {
+    if (!profile.profileId || !targetPage.questionText || (targetPage.extractionConfidence ?? 0) < 0.45) return;
+    const key = `${profile.profileId}:${targetSite.site_key}:${targetPage.url}:${targetPage.questionText}`;
+    if (autoSnapshotKeysRef.current.has(key)) return;
+    autoSnapshotKeysRef.current.add(key);
+
+    try {
+      const persistedSite = await ensureSite(baseUrl, targetSite);
+      await saveSnapshot(baseUrl, {
+        profile_id: profile.profileId,
+        site_key: persistedSite.site_key,
+        survey_id: currentSurveyId(),
+        url: targetPage.url,
+        page_title: targetPage.title,
+        question_text: targetPage.questionText,
+        options_text: targetPage.optionsText,
+        page_text: surveyQuestionText(targetPage),
+        language: targetPage.language
+      });
+    } catch {
+      autoSnapshotKeysRef.current.delete(key);
+    }
   }
 
   async function loadNotes() {
@@ -584,6 +637,7 @@ export function App() {
               <div title={contextStatusTitle(site, page, profile, systemStatus)}>
                 <span className={`live-dot ${apiStatus}`} />
                 <span>{apiStatusLabel(apiStatus)}</span>
+                <em>{pageStatusLabel(page)}</em>
               </div>
               <button type="button" onClick={() => void refreshPageContext(trimmedApiBaseUrl, true)} aria-label="刷新页面上下文">
                 <RefreshCcw size={14} />
@@ -767,7 +821,7 @@ function isImportantSystemMessage(text: string): boolean {
 function formatKnowledge(results: KnowledgeChunk[]): string {
   return results
     .slice(0, 6)
-    .map((item, index) => `${index + 1}. [${item.source_type}] ${item.chunk_text}`)
+    .map((item, index) => `${index + 1}. [${sourceTypeLabel(item.source_type)}] ${cleanKnowledgeText(item.chunk_text)}`)
     .join("\n\n");
 }
 
@@ -791,6 +845,34 @@ function apiStatusLabel(status: ApiStatus): string {
   if (status === "db-offline") return "异常";
   if (status === "offline") return "离线";
   return "检查中";
+}
+
+function pageStatusLabel(page: ExtractedPage | null): string {
+  if (!page) return "";
+  if ((page.extractionConfidence ?? 0) >= 0.45 && page.questionText) return "题目已识别";
+  if (page.questionText) return "页面可读";
+  return "非问卷页";
+}
+
+function surveyQuestionText(page: ExtractedPage): string {
+  const parts = [
+    page.progressText ? `进度：${page.progressText}` : "",
+    page.questionType ? `题型：${page.questionType}` : "",
+    page.questionText ? `题目：${page.questionText}` : "",
+    page.optionsText ? `选项：${page.optionsText}` : ""
+  ].filter(Boolean);
+  return parts.join("\n") || page.pageText;
+}
+
+function sourceTypeLabel(value: string): string {
+  if (value === "note") return "笔记";
+  if (value === "page_snapshot") return "页面";
+  if (value === "ai_conversation") return "AI";
+  return value;
+}
+
+function cleanKnowledgeText(value: string): string {
+  return value.replace(/^User:\s*/i, "用户：").replace(/\sAI:\s*/i, "\nAI：").trim();
 }
 
 function contextStatusTitle(

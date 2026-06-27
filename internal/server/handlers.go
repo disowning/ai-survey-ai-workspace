@@ -1183,10 +1183,29 @@ func (s *Server) translateText(c *gin.Context) {
 	ctx, cancel := aiRequestContext(c)
 	defer cancel()
 
+	cached, err := scanTranslation(s.db.QueryRowContext(ctx, `
+		SELECT id, profile_id, site_key, source_text, translated_text, source_lang, target_lang, created_at
+		FROM translations
+		WHERE profile_id = $1
+			AND site_key = $2
+			AND source_text = $3
+			AND target_lang = $4
+		ORDER BY id DESC
+		LIMIT 1
+	`, req.ProfileID, req.SiteKey, req.SourceText, req.TargetLang))
+	if err == nil {
+		c.JSON(http.StatusOK, cached)
+		return
+	}
+	if err != sql.ErrNoRows {
+		handleDBError(c, err)
+		return
+	}
+
 	translated, err := s.aiClient.Chat(ctx, []ai.ChatMessage{
 		{
 			Role:    "system",
-			Content: "You are a survey translation assistant. Translate only the provided survey page text. Do not answer survey questions, do not suggest choices, do not process credentials, and preserve the meaning of questions and options.",
+			Content: "You are a survey translation assistant. Translate only the provided survey question, options, and page text. Preserve question and option meaning. Do not fabricate identity information, do not submit anything, and do not process credentials.",
 		},
 		{
 			Role:    "user",
@@ -1296,14 +1315,21 @@ func containsSensitiveCredential(text string) bool {
 }
 
 type chatRequest struct {
-	ProfileID    int64   `json:"profile_id"`
-	SiteKey      string  `json:"site_key"`
-	SurveyID     *int64  `json:"survey_id"`
-	Scope        string  `json:"scope"`
-	PageText     string  `json:"page_text"`
-	QuestionText *string `json:"question_text"`
-	OptionsText  *string `json:"options_text"`
-	UserMessage  string  `json:"user_message"`
+	ProfileID            int64    `json:"profile_id"`
+	SiteKey              string   `json:"site_key"`
+	SurveyID             *int64   `json:"survey_id"`
+	Scope                string   `json:"scope"`
+	PageText             string   `json:"page_text"`
+	QuestionText         *string  `json:"question_text"`
+	OptionsText          *string  `json:"options_text"`
+	ProgressText         *string  `json:"progress_text"`
+	QuestionType         *string  `json:"question_type"`
+	ExtractionConfidence *float64 `json:"extraction_confidence"`
+	ExtractedBlocks      []struct {
+		Role string `json:"role"`
+		Text string `json:"text"`
+	} `json:"extracted_blocks"`
+	UserMessage string `json:"user_message"`
 }
 
 func (s *Server) chatWithAI(c *gin.Context) {
@@ -1353,14 +1379,19 @@ func (s *Server) chatWithAI(c *gin.Context) {
 			Role: "system",
 			Content: `你是一个问卷调查辅助助手。
 
-你的任务是帮助用户理解当前问卷页面，包括翻译、解释题目、总结页面、整理笔记、检索历史记录。
+你的任务是帮助用户快速理解当前问卷页面，包括翻译、解释题目、总结页面、整理笔记、检索历史记录、对比选项，并在用户明确要求时基于用户已经提供的真实情况给出选择建议。
 
 你只能基于系统提供的当前页面内容、当前 Profile 历史笔记、当前网站历史记录和当前问卷上下文回答。
 你不能编造页面中没有的信息。
-你不能替用户自动作答。
+你不能编造用户身份、经历、收入、年龄、地区、消费习惯等事实。
+你不能替用户自动提交问卷，也不能指导批量操作、绕过风控或处理验证码。
 你不能提供绕过风控、批量作弊、自动提交问卷的方案。
 你不能处理账号密码、cookie、refresh token、API key 等敏感凭证。
-如果用户要求你给出具体选项答案，只解释题目和选项含义，并提醒用户自行作答。`,
+如果用户要求“帮我选择/推荐选项”，你可以：
+1. 先解释题目和各选项含义；
+2. 只基于用户消息、历史笔记或页面中已有的真实信息做建议；
+3. 如果缺少真实信息，先说明需要用户补充，不要猜测；
+4. 输出“建议选择/不确定/需要你确认”，不得声称已经替用户作答。`,
 		},
 		{
 			Role:    "user",
@@ -1478,7 +1509,30 @@ func buildChatContext(req chatRequest, notes, snapshots, knowledge string) strin
 	builder.WriteString(trimForContext(ptrValueString(req.QuestionText), 2000))
 	builder.WriteString("\n\n当前选项：\n")
 	builder.WriteString(trimForContext(ptrValueString(req.OptionsText), 2000))
-	builder.WriteString("\n\n当前页面完整文本：\n")
+	builder.WriteString("\n\n当前进度：\n")
+	builder.WriteString(emptyFallback(ptrValueString(req.ProgressText)))
+	builder.WriteString("\n\n题目类型：\n")
+	builder.WriteString(emptyFallback(ptrValueString(req.QuestionType)))
+	if req.ExtractionConfidence != nil {
+		builder.WriteString("\n\n页面识别置信度：\n")
+		builder.WriteString(strconv.FormatFloat(*req.ExtractionConfidence, 'f', 2, 64))
+	}
+	if len(req.ExtractedBlocks) > 0 {
+		builder.WriteString("\n\n结构化页面块：\n")
+		for _, block := range req.ExtractedBlocks {
+			role := strings.TrimSpace(block.Role)
+			text := strings.TrimSpace(block.Text)
+			if role == "" || text == "" || containsSensitiveCredential(text) {
+				continue
+			}
+			builder.WriteString("- ")
+			builder.WriteString(role)
+			builder.WriteString(": ")
+			builder.WriteString(trimForContext(text, 500))
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\n\n当前页面补充文本：\n")
 	builder.WriteString(trimForContext(req.PageText, 12000))
 	builder.WriteString("\n\n相关历史笔记：\n")
 	builder.WriteString(emptyFallback(notes))
@@ -1710,6 +1764,18 @@ func (s *Server) searchKnowledgeChunks(c *gin.Context) {
 				OR chunk_text ILIKE '%' || $5 || '%'
 			)
 		ORDER BY
+			CASE source_type
+				WHEN 'note' THEN 0
+				WHEN 'page_snapshot' THEN 1
+				WHEN 'ai_conversation' THEN 2
+				ELSE 3
+			END ASC,
+			CASE
+				WHEN $3::bigint IS NOT NULL AND survey_id = $3 THEN 0
+				WHEN scope = 'site' THEN 1
+				WHEN scope = 'profile' THEN 2
+				ELSE 3
+			END ASC,
 			CASE
 				WHEN $8::vector IS NOT NULL AND embedding IS NOT NULL THEN embedding <=> $8::vector
 				ELSE NULL
@@ -1786,9 +1852,6 @@ func (s *Server) createKnowledgeFromPageSnapshot(ctx context.Context, snapshot m
 	if snapshot.OptionsText != nil && *snapshot.OptionsText != "" {
 		textParts = append(textParts, "Options: "+*snapshot.OptionsText)
 	}
-	if snapshot.PageText != nil && *snapshot.PageText != "" {
-		textParts = append(textParts, "Page: "+trimForContext(*snapshot.PageText, 3000))
-	}
 	text := strings.TrimSpace(strings.Join(textParts, "\n"))
 	if text == "" || containsSensitiveCredential(text) {
 		return
@@ -1812,6 +1875,9 @@ func (s *Server) createKnowledgeFromNote(ctx context.Context, note models.Note) 
 }
 
 func (s *Server) createKnowledgeFromAIConversation(ctx context.Context, conversation models.AIConversation) {
+	if !shouldStoreAIConversationKnowledge(conversation.UserMessage, conversation.AIMessage) {
+		return
+	}
 	text := strings.TrimSpace("User: " + conversation.UserMessage + "\nAI: " + conversation.AIMessage)
 	if text == "" || containsSensitiveCredential(text) {
 		return
@@ -1822,6 +1888,27 @@ func (s *Server) createKnowledgeFromAIConversation(ctx context.Context, conversa
 		INSERT INTO knowledge_chunks (profile_id, site_key, survey_id, scope, source_type, source_id, chunk_text, embedding)
 		VALUES ($1, $2, $3, $4, 'ai_conversation', $5, $6, $7::vector)
 	`, conversation.ProfileID, conversation.SiteKey, ptrValue(conversation.SurveyID), normalizeScope("", conversation.SurveyID), conversation.ID, text, ptrValue(embedding))
+}
+
+func shouldStoreAIConversationKnowledge(userMessage, aiMessage string) bool {
+	combined := strings.TrimSpace(userMessage + "\n" + aiMessage)
+	if len([]rune(combined)) < 80 {
+		return false
+	}
+	lower := strings.ToLower(combined)
+	skipMarkers := []string{"hello", "hi", "你好", "在吗", "test", "ok"}
+	for _, marker := range skipMarkers {
+		if strings.TrimSpace(lower) == marker {
+			return false
+		}
+	}
+	keepMarkers := []string{"question", "option", "survey", "answer", "translate", "题", "选项", "问卷", "翻译", "解释", "建议", "选择"}
+	for _, marker := range keepMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return len([]rune(combined)) >= 220
 }
 
 func (s *Server) relatedKnowledgeContext(ctx context.Context, profileID int64, siteKey string, surveyID *int64, scope, query string) (string, error) {
@@ -1845,6 +1932,12 @@ func (s *Server) relatedKnowledgeContext(ctx context.Context, profileID int64, s
 				OR chunk_text ILIKE '%' || $5 || '%'
 			)
 		ORDER BY
+			CASE source_type
+				WHEN 'note' THEN 0
+				WHEN 'page_snapshot' THEN 1
+				WHEN 'ai_conversation' THEN 2
+				ELSE 3
+			END ASC,
 			CASE
 				WHEN $6::vector IS NOT NULL AND embedding IS NOT NULL THEN embedding <=> $6::vector
 				ELSE NULL

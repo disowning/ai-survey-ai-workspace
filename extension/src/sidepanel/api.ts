@@ -200,6 +200,10 @@ export async function chatWithAI(
     page_text: string;
     question_text?: string;
     options_text?: string;
+    progress_text?: string;
+    question_type?: string;
+    extraction_confidence?: number;
+    extracted_blocks?: Array<{ role: string; text: string }>;
     user_message: string;
   }
 ): Promise<AIConversation> {

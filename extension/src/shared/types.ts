@@ -5,6 +5,13 @@ export type ExtractedPage = {
   pageText: string;
   questionText?: string;
   optionsText?: string;
+  progressText?: string;
+  questionType?: string;
+  extractionConfidence?: number;
+  extractedBlocks?: Array<{
+    role: "question" | "option" | "instruction" | "progress" | "text";
+    text: string;
+  }>;
   language?: string;
   extractedAt: string;
 };
