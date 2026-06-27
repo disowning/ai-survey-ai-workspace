@@ -15,6 +15,7 @@ export async function login(apiBaseUrl: string, username: string, password: stri
   if (!response.ok) {
     throw new Error(await readError(response, "登录失败"));
   }
+
   const data = (await response.json()) as { token: string; expires_at: string };
   setAuthToken(data.token || "");
   return data;
@@ -47,6 +48,7 @@ export async function deleteKnowledge(apiBaseUrl: string, id: number, filters: R
   const params = new URLSearchParams();
   if (filters.profile_id) params.set("profile_id", filters.profile_id);
   if (filters.site_key) params.set("site_key", filters.site_key);
+
   const response = await fetch(`${apiBaseUrl}/api/knowledge/${id}?${params.toString()}`, {
     method: "DELETE",
     headers: authHeaders()
@@ -60,6 +62,7 @@ export async function downloadExport(apiBaseUrl: string, path: string, filters: 
   const params = new URLSearchParams();
   if (filters.profile_id) params.set("profile_id", filters.profile_id);
   if (filters.site_key) params.set("site_key", filters.site_key);
+
   const response = await fetch(`${apiBaseUrl}${path}?${params.toString()}`, { headers: authHeaders() });
   if (!response.ok) {
     throw new Error(await readError(response, "导出失败"));

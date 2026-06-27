@@ -93,6 +93,29 @@ export function App() {
     });
   }
 
+  async function handleLogin() {
+    await run(async () => {
+      const data = await login(trimmedApiBaseUrl, username.trim(), password);
+      localStorage.setItem(storageKeys.apiBaseUrl, trimmedApiBaseUrl);
+      localStorage.setItem(storageKeys.authUsername, username.trim());
+      localStorage.setItem(storageKeys.authToken, data.token);
+      setPassword("");
+      setLoggedIn(true);
+      const items = await listResource(trimmedApiBaseUrl, active, filters, { limit, offset: 0 });
+      setRows(items);
+      setSelected(items[0] ?? null);
+      setOffset(0);
+    });
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(storageKeys.authToken);
+    setAuthToken("");
+    setLoggedIn(false);
+    setRows([]);
+    setSelected(null);
+  }
+
   async function handleDeleteKnowledge(row: AnyRecord) {
     const id = Number(row.id);
     if (!Number.isInteger(id) || id <= 0) return;
@@ -127,34 +150,56 @@ export function App() {
     });
   }
 
-  async function handleLogin() {
-    await run(async () => {
-      const data = await login(trimmedApiBaseUrl, username.trim(), password);
-      localStorage.setItem(storageKeys.apiBaseUrl, trimmedApiBaseUrl);
-      localStorage.setItem(storageKeys.authUsername, username.trim());
-      localStorage.setItem(storageKeys.authToken, data.token);
-      setPassword("");
-      setLoggedIn(true);
-      const items = await listResource(trimmedApiBaseUrl, active, filters, { limit, offset: 0 });
-      setRows(items);
-      setSelected(items[0] ?? null);
-      setOffset(0);
-    });
-  }
-
-  function handleLogout() {
-    localStorage.removeItem(storageKeys.authToken);
-    setAuthToken("");
-    setLoggedIn(false);
-    setRows([]);
-    setSelected(null);
-  }
-
   async function copySelected() {
     if (!selected) return;
     await navigator.clipboard.writeText(JSON.stringify(selected, null, 2));
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  if (!loggedIn) {
+    return (
+      <main className="login-shell">
+        <section className="login-card">
+          <div className="login-brand">
+            <span className="brand-mark">
+              <ShieldCheck size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <h1>Survey AI Admin</h1>
+              <p>管理员登录</p>
+            </div>
+          </div>
+
+          <label>
+            <span>API 地址</span>
+            <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} />
+          </label>
+          <label>
+            <span>用户名</span>
+            <input value={username} autoComplete="username" onChange={(event) => setUsername(event.target.value)} />
+          </label>
+          <label>
+            <span>密码</span>
+            <input
+              value={password}
+              type="password"
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && username.trim() && password) void handleLogin();
+              }}
+            />
+          </label>
+
+          {error ? <div className="error-banner">{error}</div> : null}
+
+          <button className="login-submit" type="button" onClick={() => void handleLogin()} disabled={busy || !username.trim() || !password}>
+            {busy ? "登录中" : "登录后台"}
+          </button>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -196,29 +241,12 @@ export function App() {
             <p>按 Profile、网站、问卷隔离查看数据</p>
           </div>
 
-          <div className="topbar-tools">
-            <label>
-              <span>API</span>
-              <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} />
-            </label>
-
-            <div className="login-row">
-              <input value={username} placeholder="Username" autoComplete="username" onChange={(event) => setUsername(event.target.value)} />
-              <input value={password} type="password" placeholder={loggedIn ? "已登录，留空保持" : "Password"} autoComplete="current-password" onChange={(event) => setPassword(event.target.value)} />
-              <button type="button" onClick={() => void handleLogin()} disabled={busy || !username.trim() || !password}>
-                登录
-              </button>
-              {loggedIn ? (
-                <button type="button" className="secondary-action" onClick={handleLogout}>
-                  退出
-                </button>
-              ) : null}
-            </div>
-
+          <div className="topbar-tools compact-tools">
             <div className="status-row">
               <span>{rows.length} 条已加载</span>
               <span>{visibleRows.length} 条可见</span>
               <span>{busy ? "同步中" : "已就绪"}</span>
+              <span>{username}</span>
             </div>
 
             <div className="export-buttons">
@@ -233,6 +261,9 @@ export function App() {
               <button type="button" onClick={() => openExport("/api/export/daily-report", false)}>
                 <FileText size={15} aria-hidden="true" />
                 日报
+              </button>
+              <button type="button" onClick={handleLogout}>
+                退出
               </button>
             </div>
           </div>
@@ -275,7 +306,7 @@ export function App() {
                     ))}
                     {active.key === "knowledge" ? (
                       <td>
-                        <button className="icon-button danger" type="button" onClick={() => handleDeleteKnowledge(row)}>
+                        <button className="icon-button danger" type="button" onClick={() => void handleDeleteKnowledge(row)}>
                           <Trash2 size={15} aria-hidden="true" />
                         </button>
                       </td>
@@ -437,7 +468,7 @@ function rowMatchesQuery(row: AnyRecord, query: string): boolean {
 
 function formatCell(value: unknown): string {
   if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value.length > 140 ? value.slice(0, 140) + "..." : value;
+  if (typeof value === "string") return value.length > 140 ? `${value.slice(0, 140)}...` : value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value);
 }
