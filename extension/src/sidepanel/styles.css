@@ -59,7 +59,7 @@ button {
 }
 
 .brand,
-.header-actions {
+.header-spacer {
   display: flex;
   align-items: center;
 }
@@ -84,25 +84,9 @@ button {
   font-weight: 600;
 }
 
-.header-actions {
-  gap: 8px;
-  color: #444746;
-}
-
-.header-actions button {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  color: #444746;
-  background: transparent;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.18s ease;
-}
-
-.header-actions button:hover {
-  background: #f0f4f9;
+.header-spacer {
+  width: 1px;
+  height: 1px;
 }
 
 .messages {

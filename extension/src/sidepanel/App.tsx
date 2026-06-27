@@ -4,13 +4,10 @@ import {
   Bookmark,
   ChevronDown,
   Copy,
-  MoreVertical,
-  PanelRight,
   Plus,
   RefreshCcw,
   SlidersHorizontal,
-  Sparkles,
-  X
+  Sparkles
 } from "lucide-react";
 import {
   bindProfile,
@@ -533,17 +530,7 @@ export function App() {
             </span>
             <strong>Survey Assistant</strong>
           </div>
-          <div className="header-actions">
-            <button type="button" aria-label="设置" onClick={() => setSettingsOpen((open) => !open)}>
-              <MoreVertical size={18} />
-            </button>
-            <button type="button" aria-label="历史" onClick={() => void runTask(loadChats)}>
-              <PanelRight size={18} />
-            </button>
-            <button type="button" aria-label="清空" onClick={() => setMessages([])}>
-              <X size={18} />
-            </button>
-          </div>
+          <div className="header-spacer" />
         </header>
 
         <main className="messages custom-scrollbar">
@@ -659,7 +646,7 @@ export function App() {
             </label>
             <label>
               Password
-              <input value={passwordDraft} type="password" autoComplete="current-password" placeholder={authToken ? "已登录，留空保持当前登录" : "输入登录密码"} onChange={(event) => setPasswordDraft(event.target.value)} />
+              <input value={passwordDraft} type="password" autoComplete="current-password" placeholder="输入密码" onChange={(event) => setPasswordDraft(event.target.value)} />
             </label>
             <label>
               Profile
