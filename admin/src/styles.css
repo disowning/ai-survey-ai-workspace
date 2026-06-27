@@ -490,14 +490,22 @@ td {
   color: #3c4043;
 }
 
-.column-chunk-text {
+.column-chunk-text,
+.column-note-text,
+.column-translated-text,
+.column-user-message,
+.column-ai-message,
+.column-question-text,
+.column-page-title,
+.column-remark {
   max-width: 520px;
   white-space: normal;
   line-height: 1.55;
 }
 
 .column-source-type,
-.column-scope {
+.column-scope,
+.column-status {
   color: #1a73e8;
   font-weight: 720;
 }
@@ -579,6 +587,43 @@ tr.selected td {
   display: grid;
   gap: 8px;
   margin: 0 0 14px;
+}
+
+.record-detail,
+.detail-content-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-content-card {
+  padding: 14px;
+  background: #ffffff;
+  border: 1px solid #edf0f3;
+  border-radius: 14px;
+}
+
+.detail-content-card span {
+  display: block;
+  margin-bottom: 7px;
+  color: #5f6368;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.detail-content-card p {
+  max-height: 280px;
+  margin: 0;
+  overflow: auto;
+  color: #202124;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.compact-detail-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 0;
 }
 
 .detail-list div {

@@ -304,7 +304,7 @@ export function App() {
                   <tr key={String(row.id ?? JSON.stringify(row))} className={selected === row ? "selected" : ""} onClick={() => setSelected(row)}>
                     {tableColumns.map((column) => (
                       <td key={column} className={`column-${column.replace(/_/g, "-")}`}>
-                        {active.key === "knowledge" ? formatKnowledgeCell(column, row[column], row) : formatCell(row[column])}
+                        {formatResourceCell(active.key, column, row[column], row)}
                       </td>
                     ))}
                     {active.key === "knowledge" ? (
@@ -341,21 +341,7 @@ export function App() {
                     {copied ? "已复制" : "复制 JSON"}
                   </button>
                 </div>
-                {active.key === "knowledge" ? (
-                  <KnowledgeDetail row={selected} />
-                ) : (
-                  <>
-                    <dl className="detail-list">
-                      {Object.entries(selected).map(([key, value]) => (
-                        <div key={key}>
-                          <dt>{columnLabel(key)}</dt>
-                          <dd>{formatDetail(value)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <pre>{JSON.stringify(selected, null, 2)}</pre>
-                  </>
-                )}
+                <RecordDetail resource={active.key} row={selected} />
               </>
             ) : (
               <pre>未选择记录</pre>
@@ -389,6 +375,82 @@ function iconForResource(key: ResourceKey) {
     default:
       return <Database {...props} />;
   }
+}
+
+function RecordDetail({ resource, row }: { resource: ResourceKey; row: AnyRecord }) {
+  if (resource === "knowledge") return <KnowledgeDetail row={row} />;
+
+  const sections = detailSections(resource, row);
+  return (
+    <div className="record-detail">
+      {sections.length ? (
+        <div className="detail-content-stack">
+          {sections.map((section) => (
+            <section className="detail-content-card" key={section.label}>
+              <span>{section.label}</span>
+              <p>{section.value || "-"}</p>
+            </section>
+          ))}
+        </div>
+      ) : null}
+
+      <dl className="detail-list compact-detail-list">
+        {detailMetaKeys(resource, row).map((key) => (
+          <div key={key}>
+            <dt>{columnLabel(key)}</dt>
+            <dd>{formatDetailValue(key, row[key])}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function detailSections(resource: ResourceKey, row: AnyRecord): Array<{ label: string; value: string }> {
+  switch (resource) {
+    case "profiles":
+      return [{ label: "Profile", value: [row.profile_name, row.profile_key].filter(Boolean).join(" / ") }];
+    case "sites":
+      return [{ label: "网站", value: [row.site_name, row.site_key, row.domain].filter(Boolean).join(" / ") }];
+    case "surveys":
+      return [
+        { label: "问卷标题", value: String(row.survey_title ?? "") },
+        { label: "问卷链接", value: String(row.survey_url ?? "") }
+      ];
+    case "snapshots":
+      return [
+        { label: "题目", value: String(row.question_text ?? "") },
+        { label: "选项", value: String(row.options_text ?? "") },
+        { label: "页面全文", value: String(row.page_text ?? "") }
+      ];
+    case "notes":
+      return [{ label: "笔记内容", value: String(row.note_text ?? "") }];
+    case "translations":
+      return [
+        { label: "原文", value: String(row.source_text ?? "") },
+        { label: "译文", value: String(row.translated_text ?? "") }
+      ];
+    case "conversations":
+      return [
+        { label: "用户问题", value: String(row.user_message ?? "") },
+        { label: "AI 回复", value: String(row.ai_message ?? "") }
+      ];
+    default:
+      return [];
+  }
+}
+
+function detailMetaKeys(resource: ResourceKey, row: AnyRecord): string[] {
+  const keys: Partial<Record<ResourceKey, string[]>> = {
+    profiles: ["id", "profile_key", "profile_name", "status", "remark", "created_at", "updated_at"],
+    sites: ["id", "site_key", "site_name", "domain", "created_at"],
+    surveys: ["id", "profile_id", "site_key", "status", "created_at", "updated_at"],
+    snapshots: ["id", "profile_id", "site_key", "survey_id", "url", "page_title", "language", "created_at"],
+    notes: ["id", "profile_id", "site_key", "survey_id", "page_snapshot_id", "created_at"],
+    translations: ["id", "profile_id", "site_key", "source_lang", "target_lang", "created_at"],
+    conversations: ["id", "profile_id", "site_key", "survey_id", "created_at"]
+  };
+  return (keys[resource] ?? Object.keys(row)).filter((key) => key in row);
 }
 
 function KnowledgeDetail({ row }: { row: AnyRecord }) {
@@ -454,7 +516,7 @@ function FilterBar({
     <section className="filters">
       {active.filters.map((filter) => (
         <label key={filter}>
-          <span>{filter}</span>
+          <span>{columnLabel(filter)}</span>
           <input value={filters[filter] ?? ""} onChange={(event) => onChange({ ...filters, [filter]: event.target.value })} />
         </label>
       ))}
@@ -506,8 +568,17 @@ function rowMatchesQuery(row: AnyRecord, query: string): boolean {
 }
 
 function columnsForResource(active: ResourceConfig): string[] {
-  if (active.key !== "knowledge") return active.columns;
-  return ["id", "profile_id", "site_key", "scope", "source_type", "chunk_text", "created_at"];
+  const columns: Partial<Record<ResourceKey, string[]>> = {
+    profiles: ["id", "profile_key", "profile_name", "status", "remark", "created_at"],
+    sites: ["site_key", "site_name", "domain", "created_at"],
+    surveys: ["id", "profile_id", "site_key", "survey_title", "status", "created_at"],
+    snapshots: ["id", "profile_id", "site_key", "page_title", "question_text", "created_at"],
+    notes: ["id", "profile_id", "site_key", "survey_id", "note_text", "created_at"],
+    translations: ["id", "profile_id", "site_key", "source_lang", "target_lang", "translated_text", "created_at"],
+    conversations: ["id", "profile_id", "site_key", "user_message", "ai_message", "created_at"],
+    knowledge: ["id", "profile_id", "site_key", "scope", "source_type", "chunk_text", "created_at"]
+  };
+  return columns[active.key] ?? active.columns;
 }
 
 function columnLabel(column: string): string {
@@ -532,17 +603,45 @@ function columnLabel(column: string): string {
     status: "状态",
     remark: "备注"
   };
-  return labels[column] ?? column;
+  const overrides: Record<string, string> = {
+    domain: "域名",
+    survey_url: "问卷链接",
+    source_text: "原文",
+    source_lang: "原语言",
+    target_lang: "目标语言",
+    page_title: "页面标题",
+    question_text: "题目",
+    options_text: "选项",
+    page_text: "页面全文",
+    language: "语言",
+    url: "链接",
+    updated_at: "更新时间"
+  };
+  return overrides[column] ?? labels[column] ?? column;
 }
 
-function formatKnowledgeCell(column: string, value: unknown, row: AnyRecord): string {
+function formatResourceCell(resource: ResourceKey, column: string, value: unknown, row: AnyRecord): string {
   if (column === "chunk_text") return previewText(cleanKnowledgeText(String(value ?? "")), 180);
+  if (["note_text", "translated_text", "user_message", "ai_message", "question_text", "page_text", "remark"].includes(column)) {
+    return previewText(String(value ?? ""), resource === "snapshots" ? 150 : 180);
+  }
   if (column === "scope") return scopeLabel(value);
   if (column === "source_type") return sourceTypeLabel(value);
-  if (column === "created_at") return formatDateTime(value);
+  if (column === "created_at" || column === "updated_at") return formatDateTime(value);
   if (column === "profile_id") return value ? `Profile ${String(value)}` : "-";
   if (column === "site_key") return String(value || row.site_name || "-");
+  if (column === "survey_id") return value ? String(value) : "-";
+  if (column === "status") return statusLabel(value);
+  if (column === "source_lang" || column === "target_lang" || column === "language") return String(value || "-");
   return formatCell(value);
+}
+
+function statusLabel(value: unknown): string {
+  const key = String(value ?? "");
+  if (key === "active") return "正常";
+  if (key === "disabled") return "已禁用";
+  if (key === "archived") return "已归档";
+  return key || "-";
 }
 
 function cleanKnowledgeText(value: string): string {
@@ -600,6 +699,16 @@ function formatDetail(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value, null, 2);
+}
+
+function formatDetailValue(key: string, value: unknown): string {
+  if (key === "created_at" || key === "updated_at") return formatDateTime(value);
+  if (key === "status") return statusLabel(value);
+  if (key === "scope") return scopeLabel(value);
+  if (key === "source_type") return sourceTypeLabel(value);
+  if (key === "profile_id") return value ? `Profile ${String(value)}` : "-";
+  if (key === "survey_id" || key === "page_snapshot_id") return value ? String(value) : "-";
+  return formatDetail(value);
 }
 
 function exportFilename(path: string): string {
